@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+from playwright.async_api import Browser, async_playwright
+from playwright.async_api import TimeoutError as PWTimeout
 
 
 @dataclass(slots=True)
@@ -45,7 +46,7 @@ def _hash_url(url: str) -> str:
 
 async def _capture_one(
     sem: asyncio.Semaphore,
-    browser,
+    browser: Browser,
     url: str,
     out_dir: Path,
     timeout_s: float,
@@ -86,7 +87,7 @@ async def _capture_one(
                 final_url=page.url,
                 status=status,
             )
-        except (PWTimeout, asyncio.TimeoutError):
+        except (TimeoutError, PWTimeout):
             return ScrapeResult(url=url, ok=False, error="timeout")
         except Exception as e:  # noqa: BLE001 - we want every failure mode logged
             return ScrapeResult(url=url, ok=False, error=type(e).__name__ + ": " + str(e)[:200])

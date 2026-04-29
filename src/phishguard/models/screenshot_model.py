@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
+from torchvision.models import EfficientNet_B0_Weights, efficientnet_b0
 
 
-class ScreenshotClassifier(nn.Module):
+class ScreenshotClassifier(nn.Module):  # type: ignore[misc]
     """EfficientNet-B0 backbone with a 2-class head and dropout."""
 
     def __init__(self, num_classes: int = 2, dropout: float = 0.3, pretrained: bool = True) -> None:

@@ -24,9 +24,10 @@ import json
 import logging
 import pickle
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -52,19 +53,19 @@ IMG_ONNX = CKPT_DIR / "screenshot_model.onnx"
 FUSION = CKPT_DIR / "fusion_model.pkl"
 
 
-class PredictRequest(BaseModel):
+class PredictRequest(BaseModel):  # type: ignore[misc]
     url: str = Field(..., min_length=4, max_length=4096)
-    html: Optional[str] = Field(None, description="Raw HTML text. Optional.")
-    screenshot_b64: Optional[str] = Field(None, description="Base64-encoded PNG. Optional.")
+    html: str | None = Field(None, description="Raw HTML text. Optional.")
+    screenshot_b64: str | None = Field(None, description="Base64-encoded PNG. Optional.")
 
 
-class ModalityProb(BaseModel):
-    p: Optional[float] = None
-    latency_ms: Optional[float] = None
+class ModalityProb(BaseModel):  # type: ignore[misc]
+    p: float | None = None
+    latency_ms: float | None = None
     available: bool = False
 
 
-class PredictResponse(BaseModel):
+class PredictResponse(BaseModel):  # type: ignore[misc]
     p_phish: float
     is_phish: bool
     threshold: float
@@ -73,11 +74,11 @@ class PredictResponse(BaseModel):
 
 
 # globals populated at startup
-_state: dict = {}
+_state: dict[str, Any] = {}
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("loading artifacts ...")
     _state["url_booster"] = lgb.Booster(model_file=str(URL_MODEL))
     with URL_CALIB.open("rb") as f:
@@ -86,11 +87,16 @@ async def lifespan(app: FastAPI):
     _state["url_extractor"] = URLFeatureExtractor()
 
     if HTML_ONNX.exists():
-        _state["html_session"] = ort.InferenceSession(str(HTML_ONNX), providers=["CPUExecutionProvider"])
+        _state["html_session"] = ort.InferenceSession(
+            str(HTML_ONNX), providers=["CPUExecutionProvider"]
+        )
         from transformers import AutoTokenizer
+
         _state["html_tokenizer"] = AutoTokenizer.from_pretrained("models/checkpoints/html_model")
     if IMG_ONNX.exists():
-        _state["img_session"] = ort.InferenceSession(str(IMG_ONNX), providers=["CPUExecutionProvider"])
+        _state["img_session"] = ort.InferenceSession(
+            str(IMG_ONNX), providers=["CPUExecutionProvider"]
+        )
 
     _state["fusion"] = FusionModel.load(FUSION)
     logger.info("ready (threshold=%.4f)", _state["fusion"].threshold)
@@ -101,8 +107,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PhishGuard", version="0.1.0", lifespan=lifespan)
 
 
-@app.get("/healthz")
-def healthz() -> dict:
+@app.get("/healthz")  # type: ignore[misc]
+def healthz() -> dict[str, Any]:
     return {"status": "ok", "models_loaded": list(_state.keys())}
 
 
@@ -120,8 +126,11 @@ def _predict_html(html: str) -> float | None:
     if sess is None or tok is None:
         return None
     from phishguard.training.train_html import clean_html
+
     encoded = tok(clean_html(html), truncation=True, max_length=512, return_tensors="np")
-    out = sess.run(None, {"input_ids": encoded["input_ids"], "attention_mask": encoded["attention_mask"]})
+    out = sess.run(
+        None, {"input_ids": encoded["input_ids"], "attention_mask": encoded["attention_mask"]}
+    )
     logits = out[0][0]
     e = np.exp(logits - logits.max())
     probs = e / e.sum()
@@ -146,7 +155,7 @@ def _predict_image(b64: str) -> float | None:
     return float(probs[1])
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict", response_model=PredictResponse)  # type: ignore[misc]
 def predict(req: PredictRequest) -> PredictResponse:
     t0 = time.perf_counter()
     modalities: dict[str, ModalityProb] = {}
@@ -154,7 +163,9 @@ def predict(req: PredictRequest) -> PredictResponse:
     try:
         t = time.perf_counter()
         p_url = _predict_url(req.url)
-        modalities["url"] = ModalityProb(p=p_url, latency_ms=(time.perf_counter() - t) * 1000, available=True)
+        modalities["url"] = ModalityProb(
+            p=p_url, latency_ms=(time.perf_counter() - t) * 1000, available=True
+        )
     except Exception as e:
         logger.exception("url model failed")
         raise HTTPException(status_code=500, detail=f"url model failure: {e}") from e
@@ -163,7 +174,9 @@ def predict(req: PredictRequest) -> PredictResponse:
     if req.html:
         t = time.perf_counter()
         p_html = _predict_html(req.html)
-        modalities["html"] = ModalityProb(p=p_html, latency_ms=(time.perf_counter() - t) * 1000, available=p_html is not None)
+        modalities["html"] = ModalityProb(
+            p=p_html, latency_ms=(time.perf_counter() - t) * 1000, available=p_html is not None
+        )
     else:
         modalities["html"] = ModalityProb(available=False)
 
@@ -175,7 +188,9 @@ def predict(req: PredictRequest) -> PredictResponse:
         except Exception:
             logger.exception("screenshot decode/inference failed; degrading")
             p_img = None
-        modalities["img"] = ModalityProb(p=p_img, latency_ms=(time.perf_counter() - t) * 1000, available=p_img is not None)
+        modalities["img"] = ModalityProb(
+            p=p_img, latency_ms=(time.perf_counter() - t) * 1000, available=p_img is not None
+        )
     else:
         modalities["img"] = ModalityProb(available=False)
 

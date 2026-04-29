@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,11 +21,17 @@ import yaml
 from bs4 import BeautifulSoup
 from datasets import Dataset
 from sklearn.metrics import (
-    average_precision_score, brier_score_loss, f1_score, roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    roc_auc_score,
 )
 from transformers import (
-    AutoModelForSequenceClassification, AutoTokenizer,
-    DataCollatorWithPadding, Trainer, TrainingArguments,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    Trainer,
+    TrainingArguments,
 )
 
 
@@ -39,7 +46,7 @@ def clean_html(html: str) -> str:
     return f"{tag_seq[:1024]} [SEP] {text[:8000]}"
 
 
-def metrics_fn(eval_pred):
+def metrics_fn(eval_pred: Any) -> dict[str, float]:
     logits, labels = eval_pred
     probs = torch.softmax(torch.tensor(logits), dim=-1)[:, 1].numpy()
     preds = (probs >= 0.5).astype(int)
@@ -51,7 +58,7 @@ def metrics_fn(eval_pred):
     }
 
 
-def train(cfg: dict) -> None:
+def train(cfg: dict[str, Any]) -> None:
     torch.manual_seed(cfg["seed"])
     np.random.seed(cfg["seed"])
 
@@ -69,8 +76,8 @@ def train(cfg: dict) -> None:
 
     tok = AutoTokenizer.from_pretrained(cfg["model"]["base"])
 
-    def tokenize(batch):
-        return tok(batch["text"], truncation=True, max_length=cfg["model"]["max_length"])
+    def tokenize(batch: dict[str, Any]) -> dict[str, Any]:
+        return tok(batch["text"], truncation=True, max_length=cfg["model"]["max_length"])  # type: ignore[no-any-return]
 
     train_ds = train_ds.map(tokenize, batched=True, remove_columns=["text"])
     val_ds = val_ds.map(tokenize, batched=True, remove_columns=["text"])
@@ -119,7 +126,9 @@ def train(cfg: dict) -> None:
     # ONNX export
     onnx_path = Path(cfg["artifacts"]["onnx_path"])
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy = tok("hello world", return_tensors="pt", truncation=True, max_length=cfg["model"]["max_length"])
+    dummy = tok(
+        "hello world", return_tensors="pt", truncation=True, max_length=cfg["model"]["max_length"]
+    )
     model.eval().cpu()
     torch.onnx.export(
         model,

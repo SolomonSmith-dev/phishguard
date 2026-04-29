@@ -9,19 +9,71 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse, parse_qs, ParseResult
+from urllib.parse import ParseResult, parse_qs, urlparse
 
 import tldextract
 
 _BRAND_KEYWORDS = (
-    "paypal", "apple", "microsoft", "amazon", "google", "facebook", "instagram",
-    "netflix", "chase", "wellsfargo", "bankofamerica", "citi", "office365",
-    "outlook", "gmail", "linkedin", "dropbox", "docusign", "irs", "usps", "fedex",
-    "dhl", "ups", "binance", "coinbase", "metamask",
+    "paypal",
+    "apple",
+    "microsoft",
+    "amazon",
+    "google",
+    "facebook",
+    "instagram",
+    "netflix",
+    "chase",
+    "wellsfargo",
+    "bankofamerica",
+    "citi",
+    "office365",
+    "outlook",
+    "gmail",
+    "linkedin",
+    "dropbox",
+    "docusign",
+    "irs",
+    "usps",
+    "fedex",
+    "dhl",
+    "ups",
+    "binance",
+    "coinbase",
+    "metamask",
 )
-_SUSPICIOUS_TLDS = frozenset({"tk","ml","ga","cf","gq","xyz","top","click","country","support","loan","online"})
-_SHORTENERS = frozenset({"bit.ly","tinyurl.com","goo.gl","t.co","ow.ly","is.gd","buff.ly","adf.ly","rebrand.ly","cutt.ly","shorturl.at"})
-_SUSPICIOUS_KEYWORDS = ("secure","account","update","verify","login","signin","confirm","banking","wallet","webscr","billing","password","alert")
+_SUSPICIOUS_TLDS = frozenset(
+    {"tk", "ml", "ga", "cf", "gq", "xyz", "top", "click", "country", "support", "loan", "online"}
+)
+_SHORTENERS = frozenset(
+    {
+        "bit.ly",
+        "tinyurl.com",
+        "goo.gl",
+        "t.co",
+        "ow.ly",
+        "is.gd",
+        "buff.ly",
+        "adf.ly",
+        "rebrand.ly",
+        "cutt.ly",
+        "shorturl.at",
+    }
+)
+_SUSPICIOUS_KEYWORDS = (
+    "secure",
+    "account",
+    "update",
+    "verify",
+    "login",
+    "signin",
+    "confirm",
+    "banking",
+    "wallet",
+    "webscr",
+    "billing",
+    "password",
+    "alert",
+)
 
 _IP_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$|^\[?(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\]?$")
 _HEX_RE = re.compile(r"%[0-9a-fA-F]{2}")

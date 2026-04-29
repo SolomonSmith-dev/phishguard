@@ -23,10 +23,12 @@ import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
-
 FEATURE_ORDER = (
-    "p_url", "p_html", "p_img",
-    "missing_html", "missing_img",
+    "p_url",
+    "p_html",
+    "p_img",
+    "missing_html",
+    "missing_img",
 )
 
 
@@ -53,7 +55,9 @@ class FusionModel:
     """Wraps a calibrated logistic regression over modality probabilities."""
 
     def __init__(self, base: LogisticRegression | None = None) -> None:
-        self.base = base or LogisticRegression(C=1.0, penalty="l2", class_weight="balanced", max_iter=1000)
+        self.base = base or LogisticRegression(
+            C=1.0, penalty="l2", class_weight="balanced", max_iter=1000
+        )
         self.calibrated: CalibratedClassifierCV | None = None
         self.threshold: float = 0.5
 
@@ -74,7 +78,7 @@ class FusionModel:
             pickle.dump({"calibrated": self.calibrated, "threshold": self.threshold}, f)
 
     @classmethod
-    def load(cls, path: Path) -> "FusionModel":
+    def load(cls, path: Path) -> FusionModel:
         with path.open("rb") as f:
             blob = pickle.load(f)
         m = cls()

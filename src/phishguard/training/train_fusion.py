@@ -12,19 +12,23 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import yaml
 from sklearn.metrics import (
-    average_precision_score, brier_score_loss, f1_score,
-    precision_recall_curve, roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    precision_recall_curve,
+    roc_auc_score,
 )
 
 from phishguard.models.fusion import FEATURE_ORDER, FusionModel
 
 
-def load_xy(path: str, cfg: dict) -> tuple[np.ndarray, np.ndarray]:
+def load_xy(path: str, cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     df = pd.read_parquet(path)
     p_url = df[cfg["inputs"]["url_prob_col"]].values
     p_html = df[cfg["inputs"]["html_prob_col"]]
@@ -55,7 +59,7 @@ def pick_threshold(y_true: np.ndarray, probs: np.ndarray, min_recall: float, mod
     return float(thr[best])
 
 
-def train(cfg: dict) -> None:
+def train(cfg: dict[str, Any]) -> None:
     np.random.seed(cfg["seed"])
 
     X_train, y_train = load_xy(cfg["data"]["fusion_train"], cfg)
@@ -68,22 +72,31 @@ def train(cfg: dict) -> None:
     val_probs = model.predict_proba(X_val)
     test_probs = model.predict_proba(X_test)
 
-    print(f"val   AUC={roc_auc_score(y_val, val_probs):.4f}  AP={average_precision_score(y_val, val_probs):.4f}")
-    print(f"test  AUC={roc_auc_score(y_test, test_probs):.4f}  AP={average_precision_score(y_test, test_probs):.4f}")
+    val_auc = roc_auc_score(y_val, val_probs)
+    val_ap = average_precision_score(y_val, val_probs)
+    print(f"val   AUC={val_auc:.4f}  AP={val_ap:.4f}")
+    test_auc = roc_auc_score(y_test, test_probs)
+    test_ap = average_precision_score(y_test, test_probs)
+    print(f"test  AUC={test_auc:.4f}  AP={test_ap:.4f}")
 
     thr = pick_threshold(
-        y_val, val_probs,
+        y_val,
+        val_probs,
         min_recall=cfg["decision_threshold"]["min_recall"],
         mode=cfg["decision_threshold"]["optimize_for"],
     )
     model.threshold = thr
     test_preds = (test_probs >= thr).astype(int)
-    print(f"threshold={thr:.4f}  test F1={f1_score(y_test, test_preds):.4f}  Brier={brier_score_loss(y_test, test_probs):.4f}")
+    test_f1 = f1_score(y_test, test_preds)
+    test_brier = brier_score_loss(y_test, test_probs)
+    print(f"threshold={thr:.4f}  test F1={test_f1:.4f}  Brier={test_brier:.4f}")
 
     art = cfg["artifacts"]
     Path(art["model_path"]).parent.mkdir(parents=True, exist_ok=True)
     model.save(Path(art["model_path"]))
-    Path(art["threshold_path"]).write_text(json.dumps({"threshold": thr, "feature_order": list(FEATURE_ORDER)}))
+    Path(art["threshold_path"]).write_text(
+        json.dumps({"threshold": thr, "feature_order": list(FEATURE_ORDER)})
+    )
     print(f"saved -> {art['model_path']}")
 
 

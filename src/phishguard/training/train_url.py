@@ -15,16 +15,18 @@ import argparse
 import json
 import pickle
 from pathlib import Path
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
-    average_precision_score, brier_score_loss, f1_score, roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold
 
 from phishguard.features import URLFeatureExtractor
 
@@ -37,7 +39,7 @@ def featurize(urls: list[str]) -> pd.DataFrame:
     return df
 
 
-def train(cfg: dict) -> None:
+def train(cfg: dict[str, Any]) -> None:
     np.random.seed(cfg["seed"])
 
     train_df = pd.read_parquet(cfg["data"]["train_path"])
@@ -69,12 +71,19 @@ def train(cfg: dict) -> None:
     val_probs = booster.predict(X_val, num_iteration=booster.best_iteration)
     test_probs = booster.predict(X_test, num_iteration=booster.best_iteration)
 
-    print(f"val   AUC={roc_auc_score(y_val, val_probs):.4f}  AP={average_precision_score(y_val, val_probs):.4f}")
-    print(f"test  AUC={roc_auc_score(y_test, test_probs):.4f}  AP={average_precision_score(y_test, test_probs):.4f}")
-    print(f"test  F1={f1_score(y_test, (test_probs >= 0.5).astype(int)):.4f}  Brier={brier_score_loss(y_test, test_probs):.4f}")
+    val_auc = roc_auc_score(y_val, val_probs)
+    val_ap = average_precision_score(y_val, val_probs)
+    print(f"val   AUC={val_auc:.4f}  AP={val_ap:.4f}")
+    test_auc = roc_auc_score(y_test, test_probs)
+    test_ap = average_precision_score(y_test, test_probs)
+    print(f"test  AUC={test_auc:.4f}  AP={test_ap:.4f}")
+    test_f1 = f1_score(y_test, (test_probs >= 0.5).astype(int))
+    test_brier = brier_score_loss(y_test, test_probs)
+    print(f"test  F1={test_f1:.4f}  Brier={test_brier:.4f}")
 
     # isotonic calibrator on val probs vs. val labels
     from sklearn.isotonic import IsotonicRegression
+
     iso = IsotonicRegression(out_of_bounds="clip")
     iso.fit(val_probs, y_val)
     cal_test = iso.transform(test_probs)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import math
 
-from hypothesis import given, strategies as st
-
+from hypothesis import given
+from hypothesis import strategies as st
 from phishguard.features import URLFeatureExtractor, extract_url_features
 
 
@@ -66,7 +66,9 @@ def test_extractor_batch():
 
 
 def test_entropy_is_finite():
-    f = extract_url_features("https://verylongdomainnamewithlotsofcharacters.example.com/very/deep/path")
+    f = extract_url_features(
+        "https://verylongdomainnamewithlotsofcharacters.example.com/very/deep/path"
+    )
     assert math.isfinite(f.url_entropy)
     assert f.url_entropy > 0
 

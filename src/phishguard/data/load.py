@@ -55,6 +55,7 @@ def download_phiusiil() -> Path:
 
 def download_tranco() -> Path:
     import httpx
+
     target = RAW / "tranco_top1m.csv"
     if target.exists():
         return target
