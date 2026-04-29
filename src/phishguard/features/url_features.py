@@ -1,19 +1,7 @@
 """URL feature engineering.
 
-Produces ~60 numeric features per URL. Pure-Python, dependency-light, fast enough
+~63 numeric features per URL. Pure-Python, dependency-light, fast enough
 to run inline in the API request path.
-
-Categories of features:
-    1. Lexical:        length, digit ratio, special char counts, entropy
-    2. Host-based:     subdomain depth, suspicious TLDs, IP-as-host
-    3. Path-based:     path depth, query params, file extensions
-    4. Brand cues:     known-brand substring in subdomain or path
-    5. Encoding:       hex/percent encoding ratios, punycode
-    6. Heuristics:     '@' in URL, '//' in path, suspicious keywords
-
-Why not just throw raw chars at a CNN? Because a calibrated GBDT on these features
-gets you to ~0.97 F1 on PhiUSIIL with negligible inference cost. Use that as the
-strong baseline before reaching for sequence models.
 """
 
 from __future__ import annotations
@@ -21,39 +9,21 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, ParseResult
 
 import tldextract
 
-# Brand keywords commonly impersonated. Expand this list with PhishTank statistics
-# of your own scraped corpus before training.
 _BRAND_KEYWORDS = (
     "paypal", "apple", "microsoft", "amazon", "google", "facebook", "instagram",
     "netflix", "chase", "wellsfargo", "bankofamerica", "citi", "office365",
     "outlook", "gmail", "linkedin", "dropbox", "docusign", "irs", "usps", "fedex",
     "dhl", "ups", "binance", "coinbase", "metamask",
 )
+_SUSPICIOUS_TLDS = frozenset({"tk","ml","ga","cf","gq","xyz","top","click","country","support","loan","online"})
+_SHORTENERS = frozenset({"bit.ly","tinyurl.com","goo.gl","t.co","ow.ly","is.gd","buff.ly","adf.ly","rebrand.ly","cutt.ly","shorturl.at"})
+_SUSPICIOUS_KEYWORDS = ("secure","account","update","verify","login","signin","confirm","banking","wallet","webscr","billing","password","alert")
 
-_SUSPICIOUS_TLDS = frozenset({
-    "tk", "ml", "ga", "cf", "gq",       # historically free
-    "xyz", "top", "click", "country",   # cheap and abused
-    "support", "loan", "online",
-})
-
-_SHORTENERS = frozenset({
-    "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd", "buff.ly",
-    "adf.ly", "rebrand.ly", "cutt.ly", "shorturl.at",
-})
-
-_SUSPICIOUS_KEYWORDS = (
-    "secure", "account", "update", "verify", "login", "signin", "confirm",
-    "banking", "wallet", "webscr", "billing", "password", "alert",
-)
-
-_IP_RE = re.compile(
-    r"^(?:\d{1,3}\.){3}\d{1,3}$|"               # IPv4
-    r"^\[?(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\]?$"  # IPv6 (loose)
-)
+_IP_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$|^\[?(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\]?$")
 _HEX_RE = re.compile(r"%[0-9a-fA-F]{2}")
 _PUNYCODE_RE = re.compile(r"xn--", re.IGNORECASE)
 
@@ -68,9 +38,17 @@ def _shannon_entropy(s: str) -> float:
     return -sum((c / n) * math.log2(c / n) for c in freq.values())
 
 
+def _safe_urlparse(url: str) -> ParseResult:
+    """urlparse can raise ValueError on malformed bracketed input. Fall back gracefully."""
+    candidate = url if "://" in url else f"http://{url}"
+    try:
+        return urlparse(candidate)
+    except ValueError:
+        return urlparse("http://invalid.invalid")
+
+
 @dataclass(slots=True)
 class URLFeatures:
-    """Container for engineered features. Field order is stable for training."""
     url_length: int
     host_length: int
     path_length: int
@@ -111,6 +89,7 @@ class URLFeatures:
     has_file_extension: int
     suspicious_keyword_count: int
     brand_in_subdomain: int
+    brand_in_domain: int
     brand_in_path: int
     brand_count_total: int
     url_entropy: float
@@ -123,13 +102,8 @@ class URLFeatures:
 
 
 def extract_url_features(url: str) -> URLFeatures:
-    """Extract a fixed-length feature vector from a URL string.
-
-    Robust to malformed URLs. Never raises on bad input; returns zero-filled
-    fields where parsing fails.
-    """
-    url = url.strip()
-    parsed = urlparse(url if "://" in url else f"http://{url}")
+    url = (url or "").strip()
+    parsed = _safe_urlparse(url)
     host = parsed.hostname or ""
     path = parsed.path or ""
     query = parsed.query or ""
@@ -151,7 +125,8 @@ def extract_url_features(url: str) -> URLFeatures:
     suspicious_kw = sum(1 for kw in _SUSPICIOUS_KEYWORDS if kw in url.lower())
 
     brand_in_sub = sum(1 for b in _BRAND_KEYWORDS if b in subdomain.lower())
-    brand_in_path = sum(1 for b in _BRAND_KEYWORDS if b in path.lower())
+    brand_in_dom = sum(1 for b in _BRAND_KEYWORDS if b in domain.lower())
+    brand_in_pth = sum(1 for b in _BRAND_KEYWORDS if b in path.lower())
 
     path_tokens = [t for t in path.split("/") if t]
     longest_path_token = max((len(t) for t in path_tokens), default=0)
@@ -164,7 +139,10 @@ def extract_url_features(url: str) -> URLFeatures:
 
     has_shortener = int(any(host.endswith(s) for s in _SHORTENERS))
 
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
     has_port = int(port is not None)
     port_nonstd = int(has_port and port not in (80, 443))
 
@@ -211,8 +189,9 @@ def extract_url_features(url: str) -> URLFeatures:
         has_file_extension=int(file_ext),
         suspicious_keyword_count=suspicious_kw,
         brand_in_subdomain=int(brand_in_sub > 0),
-        brand_in_path=int(brand_in_path > 0),
-        brand_count_total=brand_in_sub + brand_in_path,
+        brand_in_domain=int(brand_in_dom > 0),
+        brand_in_path=int(brand_in_pth > 0),
+        brand_count_total=brand_in_sub + brand_in_dom + brand_in_pth,
         url_entropy=_shannon_entropy(url),
         host_entropy=_shannon_entropy(host),
         path_entropy=_shannon_entropy(path),
@@ -221,11 +200,7 @@ def extract_url_features(url: str) -> URLFeatures:
 
 
 class URLFeatureExtractor:
-    """Vectorized wrapper for batch use in pandas pipelines."""
-
-    NUMERIC_FIELDS = tuple(
-        f for f in URLFeatures.__slots__ if f != "tld"
-    )
+    NUMERIC_FIELDS = tuple(f for f in URLFeatures.__slots__ if f != "tld")
     CATEGORICAL_FIELDS = ("tld",)
 
     def transform(self, urls: list[str]) -> list[dict[str, float | int | str]]:

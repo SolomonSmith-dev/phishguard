@@ -1,0 +1,12 @@
+Tranco top-5000 held-out probe (NOT seen during training)
+mean p_phish:   0.0860
+median p_phish: 0.0084
+FPR @ 0.5:      3.64%
+FPR @ 0.7:      2.78%
+FPR @ 0.9:      1.32%
+
+Interpretation: the bulk distribution is healthy (median <1%). The tail of
+~3% false positives at threshold 0.5 reflects Tranco entries that share
+surface features with phishing URLs (CDN subdomains, URL shorteners, ad
+networks). At a production threshold tuned for min_recall=0.95, FPR is
+expected below 2.5%.

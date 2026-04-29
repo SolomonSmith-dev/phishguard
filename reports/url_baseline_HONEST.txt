@@ -1,0 +1,19 @@
+Top 15 features by gain:
+         feature         gain   pct
+       has_https 1.057339e+06 47.58
+     path_length 9.841232e+05 44.29
+        has_http 7.794316e+04  3.51
+subdomain_length 3.757794e+04  1.69
+             tld 2.219968e+04  1.00
+        num_dots 7.894888e+03  0.36
+ subdomain_depth 6.882954e+03  0.31
+    host_entropy 4.932627e+03  0.22
+     url_entropy 4.824840e+03  0.22
+      url_length 2.305822e+03  0.10
+     num_special 2.171712e+03  0.10
+    letter_ratio 1.977594e+03  0.09
+   domain_length 1.964984e+03  0.09
+      num_digits 1.873194e+03  0.08
+     digit_ratio 1.731229e+03  0.08
+
+Top 3 features account for 95.4% of total gain

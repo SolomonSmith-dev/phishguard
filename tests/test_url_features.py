@@ -1,7 +1,7 @@
 """Tests for URL feature extraction.
 
-These are not just sanity checks. They lock in feature contracts so that future
-changes don't silently shift the GBDT input distribution.
+These lock in feature contracts so future changes don't silently shift the
+GBDT input distribution.
 """
 
 from __future__ import annotations
@@ -18,9 +18,16 @@ def test_obvious_phish_signals():
     assert f.has_https == 0
     assert f.has_http == 1
     assert f.is_suspicious_tld == 1
-    assert f.brand_in_subdomain == 1
+    # paypal-secure-login is the registered domain (no subdomain), so check domain
+    assert f.brand_in_domain == 1
+    assert f.brand_count_total >= 1
     assert f.suspicious_keyword_count >= 2
     assert f.num_hyphens >= 2
+
+
+def test_brand_in_subdomain():
+    f = extract_url_features("http://paypal.evil-host.tk/login")
+    assert f.brand_in_subdomain == 1
 
 
 def test_benign_url_clean():
@@ -64,8 +71,14 @@ def test_entropy_is_finite():
     assert f.url_entropy > 0
 
 
+def test_handles_malformed_urls():
+    """Regression: hypothesis found ValueError on '[' (Invalid IPv6 URL)."""
+    for bad in ["[", "]", "[::", "http://[bad", "://", "", "   ", "%"]:
+        f = extract_url_features(bad)
+        assert f.url_length >= 0
+
+
 @given(st.text(min_size=1, max_size=200))
 def test_never_raises(s):
-    # extractor must be robust to garbage input
     f = extract_url_features(s)
     assert f.url_length >= 0
