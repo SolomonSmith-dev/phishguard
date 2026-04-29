@@ -1,0 +1,36 @@
+seed: 42
+
+data:
+  train_dir: data/processed/screenshots/train
+  val_dir: data/processed/screenshots/val
+  test_dir: data/processed/screenshots/test
+  image_size: 224
+
+model:
+  arch: efficientnet_b0
+  pretrained: true
+  num_classes: 2
+  dropout: 0.3
+
+training:
+  epochs: 15
+  batch_size: 32
+  optimizer: adamw
+  learning_rate: 3.0e-4
+  weight_decay: 1.0e-4
+  scheduler: cosine
+  warmup_epochs: 1
+  fp16: true
+  augmentation:
+    random_resized_crop: true
+    color_jitter: 0.2
+    random_horizontal_flip: false   # phishing pages have meaningful left to right structure
+    random_erasing: 0.1
+
+artifacts:
+  ckpt_path: models/checkpoints/screenshot_model.pt
+  onnx_path: models/checkpoints/screenshot_model.onnx
+
+logging:
+  wandb_project: phishguard
+  wandb_run_name: screenshot_effb0_v1

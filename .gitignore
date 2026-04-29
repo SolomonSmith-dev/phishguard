@@ -1,0 +1,45 @@
+# venv
+.venv/
+venv/
+env/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# data and models
+data/raw/
+data/processed/
+data/interim/
+models/checkpoints/
+artifacts/
+mlruns/
+wandb/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+
+# notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# docker
+*.log

@@ -1,0 +1,33 @@
+seed: 42
+
+data:
+  fusion_train: data/processed/fusion_train.parquet
+  fusion_val: data/processed/fusion_val.parquet
+  fusion_test: data/processed/fusion_test.parquet
+
+inputs:
+  url_prob_col: p_url
+  html_prob_col: p_html
+  img_prob_col: p_img
+
+model:
+  type: logistic_regression
+  C: 1.0
+  penalty: l2
+  class_weight: balanced
+
+calibration:
+  method: isotonic
+
+decision_threshold:
+  optimize_for: f1     # options: f1, precision_at_recall, recall_at_precision
+  min_recall: 0.95
+
+artifacts:
+  model_path: models/checkpoints/fusion_model.pkl
+  calibrator_path: models/checkpoints/fusion_calibrator.pkl
+  threshold_path: models/checkpoints/fusion_threshold.json
+
+logging:
+  wandb_project: phishguard
+  wandb_run_name: fusion_v1

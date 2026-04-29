@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: phishguard:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://phishguard:phishguard@db:5432/phishguard
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: phishguard
+      POSTGRES_PASSWORD: phishguard
+      POSTGRES_DB: phishguard
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pg_data:

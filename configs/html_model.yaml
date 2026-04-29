@@ -1,0 +1,32 @@
+seed: 42
+
+data:
+  train_path: data/processed/html_train.parquet
+  val_path: data/processed/html_val.parquet
+  test_path: data/processed/html_test.parquet
+  text_col: html_text
+  label_col: is_phish
+
+model:
+  base: distilbert-base-uncased
+  max_length: 512
+  num_labels: 2
+  dropout: 0.1
+
+training:
+  epochs: 3
+  batch_size: 16
+  grad_accum_steps: 2
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  fp16: true
+  eval_strategy: epoch
+
+artifacts:
+  output_dir: models/checkpoints/html_model
+  onnx_path: models/checkpoints/html_model.onnx
+
+logging:
+  wandb_project: phishguard
+  wandb_run_name: html_distilbert_v1
