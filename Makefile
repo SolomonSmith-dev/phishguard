@@ -1,15 +1,21 @@
-.PHONY: setup data clean train-url train-html train-img train-fusion train-all serve eval test lint format docker
+.PHONY: setup data clean train-url train-html train-img train-fusion train-all serve eval test lint format docker check-python
 
-PYTHON := python3.11
+PYTHON := $(shell command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || command -v python3.13 2>/dev/null || command -v python3 2>/dev/null)
 VENV := .venv
 ACTIVATE := . $(VENV)/bin/activate
 
-setup:
+check-python:
+	@if [ -z "$(PYTHON)" ]; then echo "ERROR: no python3 found."; exit 1; fi
+	@$(PYTHON) -c 'import sys; assert sys.version_info >= (3,11), f"need >=3.11, got {sys.version}"' \
+	  || (echo "ERROR: Python >=3.11 required. Found: $$($(PYTHON) --version)"; exit 1)
+	@echo "using $(PYTHON) ($$($(PYTHON) --version))"
+
+setup: check-python
 	$(PYTHON) -m venv $(VENV)
 	$(ACTIVATE) && pip install --upgrade pip
 	$(ACTIVATE) && pip install -e ".[dev]"
 	$(ACTIVATE) && playwright install chromium
-	$(ACTIVATE) && pre-commit install
+	$(ACTIVATE) && pre-commit install || true
 
 data:
 	$(ACTIVATE) && python -m phishguard.data.load --download
