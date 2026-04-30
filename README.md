@@ -134,15 +134,43 @@ phishguard/
 ## Quick start
 
 ```bash
-make setup        # creates venv, installs deps, sets up pre-commit
-make data         # downloads PhiUSIIL and Tranco
-make train-url    # trains URL GBDT
-make train-html   # trains DistilBERT
-make train-img    # trains EfficientNet
-make train-fusion # trains stacked meta-learner
-make serve        # runs the FastAPI service locally
-make eval         # runs full evaluation suite
+make setup            # creates venv, installs deps, sets up pre-commit
+make data             # downloads PhiUSIIL and Tranco
+make train-url        # trains URL GBDT v0.1
+make train-url-v0_2   # trains v0.2 ablation (drops has_https/has_http/length)
+make scrape           # Playwright-renders snapshots into data/processed/snapshots
+make build-multimodal # joins manifest with labels into html/image splits
+make train-html       # trains DistilBERT (needs GPU)
+make train-img        # trains EfficientNet (needs GPU)
+make train-fusion     # trains stacked meta-learner
+make serve            # runs the FastAPI service locally (auto-loads v0.2 if present)
+make eval             # writes reports/evaluation_v0_{1,2}.md
+make drift            # writes reports/drift.html via Evidently
+make docker-up        # API + Postgres via docker compose
+make test             # full suite (34 passing, 1 xfailed)
 ```
+
+## Status (2026-04-30)
+
+| Phase | Status |
+|---|---|
+| URL data pipeline + canonicalization | done |
+| URL v0.1 baseline (leaky, documented) | done |
+| URL v0.2 ablation (production) | done |
+| Pre-commit + lint + test gates | done |
+| Scrape pipeline (Playwright) | smoke-tested |
+| Multimodal dataset assembly | done |
+| FastAPI service + Postgres logging | done |
+| Browser extension stub | done |
+| Drift dashboard (Evidently) | done |
+| HTML model training | scaffolded, awaits scraped data + GPU |
+| Screenshot model training | scaffolded, awaits scraped data + GPU |
+| Late-fusion training | scaffolded, awaits modality outputs |
+
+See `MODEL_CARD.md` for metrics and `LIMITATIONS.md` for the methodology
+findings (label-polarity inversion in PhiUSIIL, www-prefix shortcut, path-presence
+shortcut). All three were caught by end-to-end smoke tests, not by reading
+holdout numbers.
 
 ---
 

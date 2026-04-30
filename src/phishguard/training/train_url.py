@@ -31,11 +31,14 @@ from sklearn.metrics import (
 from phishguard.features import URLFeatureExtractor
 
 
-def featurize(urls: list[str]) -> pd.DataFrame:
+def featurize(urls: list[str], drop: list[str] | None = None) -> pd.DataFrame:
     extractor = URLFeatureExtractor()
     rows = extractor.transform(urls)
     df = pd.DataFrame(rows)
     df["tld"] = df["tld"].astype("category")
+    if drop:
+        keep = [c for c in df.columns if c not in set(drop)]
+        df = df[keep]
     return df
 
 
@@ -47,12 +50,16 @@ def train(cfg: dict[str, Any]) -> None:
     test_df = pd.read_parquet(cfg["data"]["test_path"])
     label = cfg["data"]["label_col"]
 
-    X_train = featurize(train_df["url"].tolist())
-    X_val = featurize(val_df["url"].tolist())
-    X_test = featurize(test_df["url"].tolist())
+    drop = cfg.get("features", {}).get("drop", []) or []
+    if drop:
+        print(f"dropping features: {drop}")
+
+    X_train = featurize(train_df["url"].tolist(), drop=drop)
+    X_val = featurize(val_df["url"].tolist(), drop=drop)
+    X_test = featurize(test_df["url"].tolist(), drop=drop)
     y_train, y_val, y_test = train_df[label].values, val_df[label].values, test_df[label].values
 
-    cat_features = ["tld"]
+    cat_features: list[str] | str = ["tld"] if "tld" in X_train.columns else "auto"
     train_set = lgb.Dataset(X_train, y_train, categorical_feature=cat_features)
     val_set = lgb.Dataset(X_val, y_val, categorical_feature=cat_features, reference=train_set)
 
@@ -98,6 +105,35 @@ def train(cfg: dict[str, Any]) -> None:
         json.dump(list(X_train.columns), f)
 
     print(f"saved booster -> {art['model_path']}")
+
+    report_path = art.get("report_path")
+    if report_path:
+        importance = booster.feature_importance(importance_type="gain")
+        feat_names = list(X_train.columns)
+        order = np.argsort(importance)[::-1]
+        top = [(feat_names[i], float(importance[i])) for i in order[:10]]
+        total = float(importance.sum()) or 1.0
+        lines = [
+            f"# URL baseline report ({cfg.get('logging', {}).get('wandb_run_name', 'url')})",
+            "",
+            f"val   AUC={val_auc:.4f}  AP={val_ap:.4f}",
+            f"test  AUC={test_auc:.4f}  AP={test_ap:.4f}",
+            f"test  F1={test_f1:.4f}  Brier={test_brier:.4f}",
+            f"calibrated test Brier={brier_score_loss(y_test, cal_test):.4f}",
+            "",
+            "## Top features by gain",
+            "",
+            "| feature | gain | pct |",
+            "|---|---|---|",
+        ]
+        for name, gain in top:
+            lines.append(f"| {name} | {gain:.0f} | {gain / total * 100:.2f}% |")
+        if drop:
+            lines.append("")
+            lines.append(f"Dropped features: {drop}")
+        Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(report_path).write_text("\n".join(lines) + "\n")
+        print(f"wrote report -> {report_path}")
 
 
 def main() -> None:

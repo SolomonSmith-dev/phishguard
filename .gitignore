@@ -43,3 +43,5 @@ secrets/
 
 # docker
 *.log
+reports/drift.html
+reports/drift.json

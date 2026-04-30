@@ -3,16 +3,24 @@
 Multi-modal phishing detector. Late fusion of URL gradient boosting + DistilBERT
 (HTML) + EfficientNet-B0 (screenshots). Calibrated probabilities throughout.
 
-## Current state (2026-04-29)
+## Current state (2026-04-30)
 
-- Tagged: `v0.1-url-baseline` (URL model only, AUC=0.999 on PhiUSIIL)
-- Tagged: `v0.1-hardened` (pre-commit gate + leakage test added)
-- Top-3 features account for 95% of gain (`has_https`, `path_length`,
-  `has_http`). Documented in `LIMITATIONS.md`. Multi-modal v1.0 is the answer.
-- Tranco top-5000 probe: median p_phish=0.008, FPR@0.7=2.78%
-- `test_no_feature_dominates_gain` is marked `known_fail` -- it catches the
-  documented has_https leak (47.6%) and will flip to pass once v0.2 retrains
-  without the leakage shortcut.
+- Tags: `v0.1-url-baseline`, `v0.1-hardened`, `v0.2-url-ablation` (planned)
+- Three load-bearing PhiUSIIL methodology issues found via E2E smoke testing:
+  1. Label polarity inverted (raw `label=1` is *legitimate* in PhiUSIIL).
+     Fixed in `data/load.py::_normalize_phiusiil_label`.
+  2. 100% of legit URLs are `https://www.*`, fixed by
+     `features.canonicalize` (strips www, normalizes trailing slash).
+  3. 0% of legit URLs have paths in PhiUSIIL -- this is intrinsic to the
+     dataset and a key motivation for multi-modal. Documented only.
+- v0.1 URL baseline (post-fix): test AUC=0.9956, Tranco FPR@0.7=0.22%.
+  `has_https` is 34.91% of gain. `xfail` regression marker on strict bar.
+- v0.2 URL ablation (production): test AUC=0.9943, Tranco FPR@0.7=1.54%.
+  Top feature subdomain_depth at 27.16%, top-3=57.9%. All leakage
+  tests pass. The FastAPI service auto-loads v0.2 when present.
+- 34 tests pass, 1 xfailed (intentional). Lint clean.
+- Scraper smoke test: 22/50 successful on Tranco (timeouts on flaky sites
+  expected). End-to-end pipeline validated.
 
 ## Stack
 
@@ -47,12 +55,15 @@ Multi-modal phishing detector. Late fusion of URL gradient boosting + DistilBERT
 ## Next executable steps
 
 1. ~~Add `.pre-commit-config.yaml` and reinstall the hook.~~ Done (v0.1-hardened)
-2. ~~`tests/test_no_leakage.py`: assert no single feature gain exceeds 30%.~~ Done (known_fail on v0.1)
-3. `make scrape` smoke test on 100 URLs from `data/processed/url_test.parquet`.
-   Verify HTML + PNG land in `data/processed/snapshots/`. Playwright Chromium
-   confirmed installed.
-4. `make train-html` once scraper smoke test passes.
-5. `make train-img` once enough screenshots exist.
+2. ~~Leakage test, label fix, canonicalization, v0.2 ablation.~~ Done (v0.2-url-ablation)
+3. `make scrape` at scale (a few thousand URLs, mixed phish + legit) on a host
+   with reliable network and Playwright headless. Smoke test confirmed pipeline
+   works on 22/50 Tranco URLs (timeouts are normal on flaky sites).
+4. `make build-multimodal` to convert manifest into html_train/val/test parquets
+   and screenshots/{train,val,test}/{phish,benign}/ ImageFolder layout.
+5. `make train-html` on a CUDA host. ONNX export at the end.
+6. `make train-img` on a CUDA host. ONNX export at the end.
+7. `make train-fusion` once at least URL + one of HTML/img exists.
 
 ## Quick verify
 

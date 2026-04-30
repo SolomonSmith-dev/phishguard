@@ -71,12 +71,21 @@ def download_tranco() -> Path:
     return target
 
 
-def _normalize_label(v: object) -> int:
-    s = str(v).strip().lower()
-    if s in {"1", "phishing", "phish", "bad", "malicious"}:
-        return 1
-    if s in {"0", "benign", "legitimate", "good", "safe"}:
+def _normalize_phiusiil_label(raw: object) -> int:
+    """PhiUSIIL polarity: raw label=1 means LEGITIMATE, raw=0 means PHISHING.
+
+    This is the opposite of what the column name 'label' implies, and is the
+    source of an early v0.1/v0.2 inversion bug discovered via end-to-end smoke
+    testing on hand-crafted phishing URLs. Spot-check: rows with raw=1 include
+    uni-mainz.de, aap.org, southbankmosaics.com -- clearly legitimate.
+
+    Returns our internal `is_phish` polarity: 1 = phishing, 0 = legitimate.
+    """
+    s = str(raw).strip().lower()
+    if s in {"1", "legitimate", "legit", "benign", "good", "safe"}:
         return 0
+    if s in {"0", "phishing", "phish", "bad", "malicious"}:
+        return 1
     return -1
 
 
@@ -86,12 +95,12 @@ def build_url_dataset(phish_csv: Path) -> pd.DataFrame:
     url_col = next(c for c in df.columns if c.lower() in {"url", "domain"})
     label_col = next(c for c in df.columns if c.lower() in {"label", "is_phishing", "type"})
     df = df[[url_col, label_col]].rename(columns={url_col: "url", label_col: "label_raw"})
-    df["is_phish"] = df["label_raw"].apply(_normalize_label)
+    df["is_phish"] = df["label_raw"].apply(_normalize_phiusiil_label)
     df = df[df["is_phish"].isin([0, 1])].drop(columns="label_raw")
     df = df.drop_duplicates(subset="url").sample(frac=1, random_state=42).reset_index(drop=True)
     n_phish = int(df["is_phish"].sum())
     n_benign = int((df["is_phish"] == 0).sum())
-    print(f"PhiUSIIL labels: phish={n_phish}  benign={n_benign}")
+    print(f"PhiUSIIL labels (post-correction): phish={n_phish}  benign={n_benign}")
     return df
 
 

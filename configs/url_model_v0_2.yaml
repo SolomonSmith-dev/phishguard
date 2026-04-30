@@ -6,6 +6,17 @@ data:
   test_path: data/processed/url_test.parquet
   label_col: is_phish
 
+# v0.2 ablation: drop the leakage shortcuts so the model is forced to learn
+# structural patterns (entropy, brand_in_*, suspicious_keyword_count, etc).
+# See LIMITATIONS.md for why has_https / has_http / *_length dominated v0.1.
+features:
+  drop:
+    - has_https
+    - has_http
+    - url_length
+    - host_length
+    - path_length
+
 model:
   type: lightgbm
   params:
@@ -30,11 +41,11 @@ calibration:
   method: isotonic
 
 artifacts:
-  model_path: models/checkpoints/url_model.lgb
-  calibrator_path: models/checkpoints/url_calibrator.pkl
-  feature_names_path: models/checkpoints/url_features.json
-  report_path: reports/url_baseline_v0_1.txt
+  model_path: models/checkpoints/url_model_v0_2.lgb
+  calibrator_path: models/checkpoints/url_calibrator_v0_2.pkl
+  feature_names_path: models/checkpoints/url_features_v0_2.json
+  report_path: reports/url_baseline_v0_2.txt
 
 logging:
   wandb_project: phishguard
-  wandb_run_name: url_lgbm_v1
+  wandb_run_name: url_lgbm_v0_2_ablation
