@@ -103,6 +103,12 @@ class PredictionLogger:
                     )
                 return
             except Exception:
+                with self._lock:
+                    conn = self._conn
+                    self._conn = None
+                    if conn is not None:
+                        with suppress(Exception):
+                            conn.close()
                 logger.exception("postgres insert failed; falling back to file")
         with self._lock, _FALLBACK_PATH.open("a") as f:
             f.write(json.dumps(row, default=str) + "\n")
