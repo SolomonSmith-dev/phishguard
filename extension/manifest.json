@@ -3,7 +3,7 @@
   "name": "PhishGuard",
   "version": "0.1.0",
   "description": "Multi-modal phishing detection. Calls a local PhishGuard API on every page load.",
-  "permissions": ["activeTab", "storage", "scripting"],
+  "permissions": ["activeTab", "storage", "scripting", "webNavigation"],
   "host_permissions": ["http://localhost:8000/*", "<all_urls>"],
   "background": { "service_worker": "background.js" },
   "action": {
