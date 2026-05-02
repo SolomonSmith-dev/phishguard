@@ -10,8 +10,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-URL_MODEL = Path("models/checkpoints/url_model.lgb")
-pytestmark = pytest.mark.skipif(not URL_MODEL.exists(), reason="URL artifacts not built yet")
+_CKPT = Path("models/checkpoints")
+# Accept v0.1 (url_model.lgb) or any versioned artifact (url_model_v*.lgb).
+_URL_ARTIFACTS_PRESENT = bool(
+    list(_CKPT.glob("url_model*.lgb")) if _CKPT.is_dir() else []
+)
+pytestmark = pytest.mark.skipif(not _URL_ARTIFACTS_PRESENT, reason="URL artifacts not built yet")
 
 
 @pytest.fixture(scope="module")
