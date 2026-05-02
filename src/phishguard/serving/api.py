@@ -22,6 +22,7 @@ import base64
 import io
 import json
 import logging
+import pickle
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -84,6 +85,24 @@ def _pick_url_artifact(v0_2_name: str, v0_1_path: Path) -> Path:
     return v0_2 if v0_2.exists() else v0_1_path
 
 
+def _load_calibrator(path: Path) -> Any:
+    """Load a sklearn calibrator serialized with joblib or plain pickle.
+
+    New artifacts are written with ``joblib.dump``; this fallback ensures
+    v0.1 artifacts written with ``pickle.dump`` still load without error.
+    """
+    try:
+        return joblib.load(path)
+    except (ValueError, EOFError, pickle.UnpicklingError) as exc:
+        logger.warning(
+            "joblib.load failed (%s); retrying with pickle for v0.1 artifact: %s",
+            type(exc).__name__,
+            exc,
+        )
+        with open(path, "rb") as fh:
+            return pickle.load(fh)  # noqa: S301 – trusted local artifact
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("loading artifacts ...")
@@ -92,7 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     url_feats_path = _pick_url_artifact("url_features_v0_2.json", URL_FEATS)
     logger.info("url model: %s", url_model_path)
     _state["url_booster"] = lgb.Booster(model_file=str(url_model_path))
-    _state["url_calibrator"] = joblib.load(url_calib_path)
+    _state["url_calibrator"] = _load_calibrator(url_calib_path)
     _state["url_feature_names"] = json.loads(url_feats_path.read_text())
     _state["url_extractor"] = URLFeatureExtractor()
 

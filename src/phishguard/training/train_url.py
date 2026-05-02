@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import pickle
 from pathlib import Path
 from typing import Any
 
+import joblib
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -99,8 +99,7 @@ def train(cfg: dict[str, Any]) -> None:
     art = cfg["artifacts"]
     Path(art["model_path"]).parent.mkdir(parents=True, exist_ok=True)
     booster.save_model(art["model_path"])
-    with open(art["calibrator_path"], "wb") as f:
-        pickle.dump(iso, f)
+    joblib.dump(iso, art["calibrator_path"])
     with open(art["feature_names_path"], "w") as f:
         json.dump(list(X_train.columns), f)
 
