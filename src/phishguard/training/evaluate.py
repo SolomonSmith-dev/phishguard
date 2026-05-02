@@ -1,7 +1,8 @@
-"""End-to-end evaluation across all available modalities.
+"""Evaluate the URL model on a dataset split and optionally run a Tranco probe.
 
-Loads whatever artifacts are present on disk (URL is required, HTML/img
-optional), runs them on the test split, and writes a report.
+Loads the URL model artifacts from disk, runs evaluation on the requested
+split, and writes a report. If the benign-only Tranco probe dataset is
+present, this module also reports false-positive rates at fixed thresholds.
 
 Usage:
     python -m phishguard.training.evaluate --url-config configs/url_model.yaml
