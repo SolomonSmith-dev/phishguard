@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir \
     "torch>=2.2" "transformers>=4.40" "lightgbm>=4.3" "scikit-learn>=1.4" \
     "pandas>=2.2" "numpy>=1.26" "tldextract>=5.1" "beautifulsoup4>=4.12" \
     "fastapi>=0.110" "uvicorn[standard]>=0.29" "onnxruntime>=1.17" \
-    "pydantic>=2.6" "pillow>=10.2"
+    "pydantic>=2.6" "pillow>=10.2" "joblib>=1.3" "psycopg[binary]>=3.1"
 
 COPY src/ ./src/
 COPY models/ ./models/

@@ -1,0 +1,23 @@
+# URL baseline report (url_lgbm_v0_2_ablation)
+
+val   AUC=0.9944  AP=0.9951
+test  AUC=0.9943  AP=0.9948
+test  F1=0.9782  Brier=0.0158
+calibrated test Brier=0.0157
+
+## Top features by gain
+
+| feature | gain | pct |
+|---|---|---|
+| subdomain_depth | 574389 | 27.16% |
+| tld | 406775 | 19.23% |
+| num_slashes | 243324 | 11.51% |
+| domain_length | 217983 | 10.31% |
+| special_ratio | 197182 | 9.32% |
+| letter_ratio | 121660 | 5.75% |
+| subdomain_length | 96896 | 4.58% |
+| num_special | 76693 | 3.63% |
+| host_entropy | 52439 | 2.48% |
+| url_entropy | 31983 | 1.51% |
+
+Dropped features: ['has_https', 'has_http', 'url_length', 'host_length', 'path_length']

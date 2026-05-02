@@ -29,6 +29,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import joblib
 import lightgbm as lgb
 import numpy as np
 import onnxruntime as ort
@@ -39,6 +40,7 @@ from pydantic import BaseModel, Field
 
 from phishguard.features import URLFeatureExtractor
 from phishguard.models.fusion import FusionInputs, FusionModel
+from phishguard.serving.prediction_log import PredictionLogger
 
 logger = logging.getLogger("phishguard")
 logging.basicConfig(level=logging.INFO)
@@ -77,13 +79,40 @@ class PredictResponse(BaseModel):  # type: ignore[misc]
 _state: dict[str, Any] = {}
 
 
+def _pick_url_artifact(v0_2_name: str, v0_1_path: Path) -> Path:
+    """Prefer v0.2 ablation artifact when present; fall back to v0.1."""
+    v0_2 = CKPT_DIR / v0_2_name
+    return v0_2 if v0_2.exists() else v0_1_path
+
+
+def _load_calibrator(path: Path) -> Any:
+    """Load a sklearn calibrator serialized with joblib or plain pickle.
+
+    New artifacts are written with ``joblib.dump``; this fallback ensures
+    v0.1 artifacts written with ``pickle.dump`` still load without error.
+    """
+    try:
+        return joblib.load(path)
+    except (ValueError, EOFError, pickle.UnpicklingError) as exc:
+        logger.warning(
+            "joblib.load failed (%s); retrying with pickle for v0.1 artifact: %s",
+            type(exc).__name__,
+            exc,
+        )
+        with open(path, "rb") as fh:
+            return pickle.load(fh)  # noqa: S301 – trusted local artifact
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("loading artifacts ...")
-    _state["url_booster"] = lgb.Booster(model_file=str(URL_MODEL))
-    with URL_CALIB.open("rb") as f:
-        _state["url_calibrator"] = pickle.load(f)
-    _state["url_feature_names"] = json.loads(URL_FEATS.read_text())
+    url_model_path = _pick_url_artifact("url_model_v0_2.lgb", URL_MODEL)
+    url_calib_path = _pick_url_artifact("url_calibrator_v0_2.pkl", URL_CALIB)
+    url_feats_path = _pick_url_artifact("url_features_v0_2.json", URL_FEATS)
+    logger.info("url model: %s", url_model_path)
+    _state["url_booster"] = lgb.Booster(model_file=str(url_model_path))
+    _state["url_calibrator"] = _load_calibrator(url_calib_path)
+    _state["url_feature_names"] = json.loads(url_feats_path.read_text())
     _state["url_extractor"] = URLFeatureExtractor()
 
     if HTML_ONNX.exists():
@@ -98,10 +127,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             str(IMG_ONNX), providers=["CPUExecutionProvider"]
         )
 
-    _state["fusion"] = FusionModel.load(FUSION)
-    logger.info("ready (threshold=%.4f)", _state["fusion"].threshold)
+    _state["fusion"] = FusionModel.load(FUSION) if FUSION.exists() else None
+    _state["pred_log"] = PredictionLogger()
+    threshold = _state["fusion"].threshold if _state["fusion"] is not None else 0.5
+    logger.info("ready (threshold=%.4f)", threshold)
     yield
     logger.info("shutting down")
+    log = _state.get("pred_log")
+    if log is not None:
+        log.close()
 
 
 app = FastAPI(title="PhishGuard", version="0.1.0", lifespan=lifespan)
@@ -194,14 +228,42 @@ def predict(req: PredictRequest) -> PredictResponse:
     else:
         modalities["img"] = ModalityProb(available=False)
 
-    fusion: FusionModel = _state["fusion"]
-    X = FusionInputs(p_url=p_url, p_html=p_html, p_img=p_img).to_vector().reshape(1, -1)
-    p_phish = float(fusion.predict_proba(X)[0])
+    fusion: FusionModel | None = _state.get("fusion")
+    if fusion is not None:
+        X = FusionInputs(p_url=p_url, p_html=p_html, p_img=p_img).to_vector().reshape(1, -1)
+        p_phish = float(fusion.predict_proba(X)[0])
+        threshold = fusion.threshold
+    else:
+        # No fusion artifact yet -- URL-only passthrough. HTML/img get averaged in
+        # if available so the response is still informative on partial modality input.
+        parts = [p_url] + [p for p in (p_html, p_img) if p is not None]
+        p_phish = float(sum(parts) / len(parts))
+        threshold = 0.5
+
+    is_phish = bool(p_phish >= threshold)
+    latency_total = (time.perf_counter() - t0) * 1000
+
+    log = _state.get("pred_log")
+    if log is not None:
+        log.log(
+            {
+                "url": req.url,
+                "p_url": p_url,
+                "p_html": p_html,
+                "p_img": p_img,
+                "p_phish": p_phish,
+                "threshold": threshold,
+                "is_phish": is_phish,
+                "latency_ms_total": latency_total,
+                "had_html": req.html is not None,
+                "had_img": req.screenshot_b64 is not None,
+            }
+        )
 
     return PredictResponse(
         p_phish=p_phish,
-        is_phish=bool(p_phish >= fusion.threshold),
-        threshold=fusion.threshold,
+        is_phish=is_phish,
+        threshold=threshold,
         modalities=modalities,
-        latency_ms_total=(time.perf_counter() - t0) * 1000,
+        latency_ms_total=latency_total,
     )

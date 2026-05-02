@@ -99,6 +99,37 @@ def _safe_urlparse(url: str) -> ParseResult:
         return urlparse("http://invalid.invalid")
 
 
+def canonicalize(url: str) -> str:
+    """Make trivially-different URLs land in the same feature bucket.
+
+    PhiUSIIL legit URLs are 100% `https://www.*` while Tranco probe URLs are
+    bare hosts. Without normalization the model becomes a `www.` detector
+    instead of a phishing detector. We strip `www.` and trailing slashes at
+    both train and serve time so distributions match.
+
+    Steps:
+        1. Strip leading/trailing whitespace.
+        2. If host has no scheme prefix, default to http.
+        3. Drop a single leading `www.` from the host.
+        4. Drop trailing slash when the path is just '/'.
+        5. Drop URL fragment (#section).
+    """
+    s = (url or "").strip()
+    if "://" not in s:
+        s = f"http://{s}"
+    if "#" in s:
+        s = s.split("#", 1)[0]
+    # Strip a single leading www. from the host (case-insensitive).
+    for prefix in ("https://www.", "http://www."):
+        if s.lower().startswith(prefix):
+            scheme_end = len(prefix) - len("www.")
+            s = s[:scheme_end] + s[scheme_end + 4 :]
+            break
+    if s.endswith("/") and s.count("/") == 3:
+        s = s.rstrip("/")
+    return s
+
+
 @dataclass(slots=True)
 class URLFeatures:
     url_length: int
@@ -154,7 +185,7 @@ class URLFeatures:
 
 
 def extract_url_features(url: str) -> URLFeatures:
-    url = (url or "").strip()
+    url = canonicalize(url)
     parsed = _safe_urlparse(url)
     host = parsed.hostname or ""
     path = parsed.path or ""

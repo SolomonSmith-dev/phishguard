@@ -21,7 +21,8 @@ import asyncio
 import hashlib
 import json
 import random
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -69,7 +70,12 @@ async def _capture_one(
                 timeout=timeout_s,
             )
             status = resp.status if resp else None
-            await page.wait_for_load_state("networkidle", timeout=int(timeout_s * 1000))
+            # networkidle is unreliable on real sites (analytics pixels, websockets,
+            # SSE keepalives never finish). Best-effort wait, swallow timeout.
+            with suppress(TimeoutError, PWTimeout):
+                await page.wait_for_load_state(
+                    "networkidle", timeout=int(min(timeout_s, 5.0) * 1000)
+                )
             html = await page.content()
             html_path = out_dir / "html" / f"{h}.html"
             html_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +137,7 @@ def main() -> None:
     manifest = args.output / "manifest.jsonl"
     with manifest.open("w") as f:
         for r in results:
-            f.write(json.dumps(r.__dict__) + "\n")
+            f.write(json.dumps(asdict(r)) + "\n")
 
     n_ok = sum(r.ok for r in results)
     print(f"scraped {n_ok}/{len(results)} successfully -> {manifest}")

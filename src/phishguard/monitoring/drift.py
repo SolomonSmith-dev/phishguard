@@ -15,8 +15,12 @@ import json
 from pathlib import Path
 
 import pandas as pd
-from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
-from evidently.report import Report
+
+# Evidently 0.7+ moved the v0 preset/report API under `evidently.legacy.*`.
+# We use it deliberately because the new pipeline-style API is overkill for
+# a single-shot drift check. Pin or migrate when Evidently removes legacy.
+from evidently.legacy.metric_preset import DataDriftPreset, TargetDriftPreset
+from evidently.legacy.report import Report
 
 from phishguard.features import URLFeatureExtractor
 
