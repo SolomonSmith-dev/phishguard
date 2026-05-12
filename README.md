@@ -1,8 +1,15 @@
 # PhishGuard
 
-Multi-modal phishing URL detector. Three independent models (URL features, HTML/DOM, page screenshot) fused via a stacked meta-learner. Deployed as a FastAPI service with a browser extension client and drift monitoring.
+Multi-modal phishing URL detector. Three independent models (URL features, HTML/DOM, page screenshot) fused via a stacked meta-learner with calibrated probabilities. Deployed as a FastAPI service with a browser extension client and drift monitoring.
 
-This is a portfolio-grade ML project. Read this README as the spec, not just docs.
+## TL;DR
+
+- **Production model:** `v0.2-url-ablation`. LightGBM URL classifier, test AUC 0.9943, Tranco top-5000 FPR at 0.7 of 1.54%. Leakage-free. Top feature `subdomain_depth` at 27.16% of gain. 34 tests passing.
+- **Earlier baselines:** `v0.1-url-baseline` (AUC 0.9956 post-fix) and `v0.1-hardened` (added pre-commit + leakage tests). Kept for ablation comparison.
+- **In progress:** HTML (DistilBERT) and screenshot (EfficientNet-B0) modalities, then stacked fusion.
+- **Honest about limits:** `LIMITATIONS.md` documents the methodology issues found in PhiUSIIL (inverted label polarity, 100% `https://www.*` legits, 0% paths on legits) and how each was fixed.
+
+See the detailed phase table further down for full status.
 
 ---
 
