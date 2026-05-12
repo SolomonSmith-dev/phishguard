@@ -23,21 +23,15 @@ Phishing detection is a multi-modal problem. URL strings leak signal, HTML struc
 
 ## Architecture
 
-```
-                  ┌────────────────────┐
-   URL string  ─► │  GBDT url-model    │ ─► p_url
-                  └────────────────────┘
-                  ┌────────────────────┐
-   HTML text   ─► │  DistilBERT html   │ ─► p_html
-                  └────────────────────┘
-                  ┌────────────────────┐
-   Screenshot  ─► │  EfficientNet-B0   │ ─► p_img
-                  └────────────────────┘
-                                       │
-                              ┌────────▼─────────┐
-                              │ Logistic meta    │ ─► p_phish (calibrated)
-                              │ + isotonic cal   │
-                              └──────────────────┘
+```mermaid
+flowchart LR
+    URL[URL string] --> GBDT[GBDT url-model]
+    HTML[HTML text] --> DBERT[DistilBERT html-model]
+    PNG[Page screenshot] --> EFF[EfficientNet-B0 img-model]
+    GBDT -->|p_url| META[Logistic meta-learner<br/>+ isotonic calibration]
+    DBERT -->|p_html| META
+    EFF -->|p_img| META
+    META -->|p_phish, calibrated| OUT[Phishing score]
 ```
 
 Late fusion was chosen over early fusion because the modalities have very different sample availability. URLs are cheap. HTML requires a fetch. Screenshots require a headless browser render. Fusing late lets the system gracefully degrade when slow modalities time out.
