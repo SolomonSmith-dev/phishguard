@@ -1,5 +1,7 @@
 # PhishGuard
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg) ![Tests](https://img.shields.io/badge/tests-34%20passing-success)
+
 Multi-modal phishing URL detector. Three independent models (URL features, HTML/DOM, page screenshot) fused via a stacked meta-learner with calibrated probabilities. Deployed as a FastAPI service with a browser extension client and drift monitoring.
 
 ## TL;DR
