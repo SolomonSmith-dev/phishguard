@@ -1,6 +1,6 @@
 # PhishGuard
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+[![CI](https://github.com/SolomonSmith-dev/phishguard/actions/workflows/ci.yml/badge.svg)](https://github.com/SolomonSmith-dev/phishguard/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 
 A phishing URL classifier I had to break before I could trust it. The public dataset's labels were upside down and every legitimate URL in it started with `https://www.`. The model that ships is the one that still passes the leakage tests after those shortcuts were removed.
 
