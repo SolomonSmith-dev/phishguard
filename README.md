@@ -1,162 +1,129 @@
 # PhishGuard
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg) ![Tests](https://img.shields.io/badge/tests-34%20passing-success)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 
-Multi-modal phishing URL detector. Three independent models (URL features, HTML/DOM, page screenshot) fused via a stacked meta-learner with calibrated probabilities. Deployed as a FastAPI service with a browser extension client and drift monitoring.
+A phishing URL classifier I had to break before I could trust it. The public dataset's labels were upside down and every legitimate URL in it started with `https://www.`. The model that ships is the one that still passes the leakage tests after those shortcuts were removed.
 
-## TL;DR
+## The leakage finding
 
-- **Production model:** `v0.2-url-ablation`. LightGBM URL classifier, test AUC 0.9943, Tranco top-5000 FPR at 0.7 of 1.54%. Leakage-free. Top feature `subdomain_depth` at 27.16% of gain. 34 tests passing.
-- **Earlier baselines:** `v0.1-url-baseline` (AUC 0.9956 post-fix) and `v0.1-hardened` (added pre-commit + leakage tests). Kept for ablation comparison.
-- **In progress:** HTML (DistilBERT) and screenshot (EfficientNet-B0) modalities, then stacked fusion.
-- **Honest about limits:** `LIMITATIONS.md` documents the methodology issues found in PhiUSIIL (inverted label polarity, 100% `https://www.*` legits, 0% paths on legits) and how each was fixed.
+PhiUSIIL (Kaggle, ~235k URLs) gives a URL-only LightGBM model AUC above 0.99 on its own holdout. Three things made that number worthless, all caught by hand-crafted smoke tests rather than by reading the holdout:
 
-See the detailed phase table further down for full status.
+1. **Label polarity is inverted.** Raw `label=1` means legitimate. Obvious phishing URLs were scoring 0.0. Fixed in `src/phishguard/data/load.py::_normalize_phiusiil_label`, locked by `tests/test_label_polarity.py`.
+2. **100% of legitimate URLs are `https://www.*` and 0% carry a path.** The model was learning "has www, no path" instead of phishing. Fixed by canonicalizing (strip `www.`, normalize trailing slash) at both train and serve time, `tests/test_canonicalize.py`.
+3. **`has_https` carried 47.6% of model gain** even after the first two fixes. v0.2 drops `has_https`, `has_http` and the length features. Top feature gain fell to 27.16% and `tests/test_no_leakage.py` enforces a 50% single-feature cap and an 80% top-3 cap.
 
----
+Full write-up with before/after numbers: [LIMITATIONS.md](./LIMITATIONS.md).
 
-## Why this exists
+## Evidence
 
-Phishing detection is a multi-modal problem. URL strings leak signal, HTML structure leaks more, and rendered screenshots leak the most because attackers visually clone real brands. Most public detectors use one of those signals. Few candidates ship a fused, calibrated, monitored system. This is the project that fills that gap.
+| Claim | Value | Source file |
+|---|---|---|
+| Test AUC, v0.2 production model | 0.9943 | `reports/url_baseline_v0_2.txt` (the `make eval` re-run in `reports/evaluation_v0_2.md` rounds to 0.9942) |
+| Test AP / F1 / calibrated Brier | 0.9948 / 0.9782 / 0.0157 | `reports/url_baseline_v0_2.txt` |
+| False-positive rate on Tranco top-5,000 (held out, never trained on), threshold 0.7 | 1.54% (2.52% at 0.5, 0.90% at 0.9) | `reports/evaluation_v0_2.md`, `LIMITATIONS.md` |
+| Top feature gain after ablation | `subdomain_depth` 27.16%, top-3 57.9% | `reports/url_baseline_v0_2.txt` |
+| Tests | 35 test functions in `tests/`, 1 marked `known_fail` (xfail) on purpose for the leaky v0.1 model | `grep -c "^def test_" tests/*.py`; run with `make test` |
+| Leakage regression tests | `tests/test_no_leakage.py`, `tests/test_label_polarity.py` | run under `pytest`; model-dependent tests skip until `make train-url-v0_2` has produced artifacts |
+| Pre-commit gate | ruff, ruff-format, mypy (strict), yaml/toml checks | `.pre-commit-config.yaml` |
+| CI | none yet | no `.github/workflows` |
 
----
+Model card with calibration method, failure modes and versioning: [MODEL_CARD.md](./MODEL_CARD.md).
 
-## Architecture
+## How to run
+
+```bash
+make setup            # venv, deps, playwright chromium, pre-commit hooks
+make data             # downloads PhiUSIIL and Tranco
+make train-url-v0_2   # trains the production LightGBM ablation (under 10 min on an M-series Mac, seed 42)
+make test             # pytest; leakage and label tests run once artifacts exist
+make serve            # FastAPI on :8000, auto-loads v0.2 when present
+curl -s localhost:8000/predict -H 'content-type: application/json' \
+  -d '{"url":"http://accounts-verify.secure-login.xyz/login.php"}'
+make eval             # writes reports/evaluation_v0_{1,2}.md
+make docker-up        # API + Postgres via docker compose
+```
+
+## Built vs planned
+
+**Built and runnable today**
+
+- URL data pipeline: PhiUSIIL loader with label correction, Tranco probe set, URL canonicalization (`src/phishguard/data/`, `src/phishguard/features/`).
+- 47 numeric URL features plus TLD as categorical (`src/phishguard/features/url_features.py`).
+- LightGBM URL classifier, 5-fold stratified CV, isotonic calibration. v0.1 (leaky, kept as a regression marker) and v0.2 (production).
+- FastAPI service: `GET /healthz`, `POST /predict` taking URL plus optional HTML and screenshot. URL path runs the native LightGBM booster and calibrator (`src/phishguard/serving/api.py`).
+- Prediction logging to Postgres with JSONL fallback and credential redaction on query strings (`src/phishguard/serving/prediction_log.py`, `tests/test_prediction_log.py`).
+- Evidently drift report script (`src/phishguard/monitoring/drift.py`, `make drift`).
+- Docker image and compose file with Postgres (`docker/`).
+- Chrome extension stub (Manifest v3) that calls the local API and shows a badge (`extension/`).
+- Playwright scrape pipeline and multimodal dataset builder, smoke-tested only (`src/phishguard/data/scrape.py`, `build_multimodal_dataset.py`).
+
+**Scaffolded, not trained or measured**
+
+- HTML model (DistilBERT fine-tune, `training/train_html.py`), screenshot model (EfficientNet-B0, `training/train_screenshot.py`) and the stacked logistic meta-learner (`training/train_fusion.py`). Training scripts and configs exist; no scraped corpus and no GPU run yet, so there are no checkpoints and no numbers.
+- ONNX Runtime serving. `api.py` opens ONNX sessions for the HTML and screenshot models when their files exist. Those files have never been produced, so no ONNX inference has run.
+- Late-fusion scoring. Without a fusion artifact the API averages whatever modality probabilities it has, URL only in practice.
+
+**Planned, not started**
+
+- GitHub Actions CI, public deploy (Fly.io or Cloud Run), reliability diagrams, adversarial eval on the screenshot model, MLflow registry (dependency listed, not wired), Prometheus latency metrics.
+- v0.3 data fixes listed in `LIMITATIONS.md`: add Common Crawl URLs so the legitimate class includes path-bearing URLs, or move to a character-level model that cannot be handed a featurizer shortcut.
+
+Original 4-phase plan: [ROADMAP.md](./ROADMAP.md).
+
+## Architecture (target)
 
 ```mermaid
 flowchart LR
-    URL[URL string] --> GBDT[GBDT url-model]
-    HTML[HTML text] --> DBERT[DistilBERT html-model]
-    PNG[Page screenshot] --> EFF[EfficientNet-B0 img-model]
-    GBDT -->|p_url| META[Logistic meta-learner<br/>+ isotonic calibration]
+    URL[URL string] --> GBDT["LightGBM url-model (built)"]
+    HTML[HTML text] --> DBERT["DistilBERT html-model (scaffolded)"]
+    PNG[Page screenshot] --> EFF["EfficientNet-B0 img-model (scaffolded)"]
+    GBDT -->|p_url| META["Logistic meta-learner + isotonic calibration (scaffolded)"]
     DBERT -->|p_html| META
     EFF -->|p_img| META
-    META -->|p_phish, calibrated| OUT[Phishing score]
+    META -->|p_phish| OUT[Phishing score]
 ```
 
-Late fusion was chosen over early fusion because the modalities have very different sample availability. URLs are cheap. HTML requires a fetch. Screenshots require a headless browser render. Fusing late lets the system gracefully degrade when slow modalities time out.
-
----
+Late fusion over early fusion because the modalities have very different cost. URLs are free. HTML needs a fetch. Screenshots need a headless render. Fusing late lets the service answer on the URL alone when the slow modalities time out, which is what it does today.
 
 ## Stack
 
-| Layer        | Tool                                                 |
-|--------------|------------------------------------------------------|
-| Modeling     | PyTorch, HuggingFace, LightGBM                       |
-| Tracking     | Weights and Biases, MLflow (model registry)          |
-| Serving      | FastAPI, ONNX Runtime, Uvicorn                       |
-| Pipelines    | Hydra configs, DVC for data versioning               |
-| Data scrape  | Playwright (async)                                   |
-| Container    | Docker, docker compose                               |
-| Tests        | pytest, hypothesis                                   |
-| Monitoring   | Evidently AI for drift, Prometheus for latency       |
-| Deployment   | Fly.io or GCP Cloud Run                              |
-
----
-
-## Datasets
-
-1. PhiUSIIL Phishing URL dataset (Kaggle, ~235k URLs, balanced)
-2. PhishTank verified feed (live, hourly snapshots)
-3. Tranco top 1M for benign URLs
-4. CIRCL phishing screenshots
-5. Self-collected via Playwright over a window of suspect URLs
-
-You will write the scrape pipeline. Do not skip this. Real data engineering is half the resume signal.
-
----
+| Layer | Used today | Scaffolded or listed only |
+|---|---|---|
+| Modeling | LightGBM, scikit-learn (isotonic calibration) | PyTorch, HuggingFace Transformers, torchvision |
+| Tracking | Weights and Biases (optional, `WANDB_MODE=disabled` in the v0.2 target) | MLflow |
+| Serving | FastAPI, Uvicorn, Pydantic | ONNX Runtime |
+| Data | pandas, tldextract, Playwright (smoke-tested) | PhishTank feed, CIRCL screenshots |
+| Quality | pytest, hypothesis, ruff, mypy strict, pre-commit | GitHub Actions |
+| Ops | Docker, docker compose, Postgres, Evidently | Prometheus, Fly.io / Cloud Run |
 
 ## Repo layout
 
 ```
 phishguard/
-├── configs/                  # Hydra YAML
-├── docker/
-├── notebooks/                # exploration only, not production
+├── configs/                  # YAML per model (url_model_v0_2.yaml is production)
+├── docker/                   # Dockerfile, compose with Postgres
+├── extension/                # Chrome MV3 stub
+├── reports/                  # training and eval reports cited above
 ├── src/phishguard/
-│   ├── data/                 # ingest, clean, scrape
-│   ├── features/             # URL feature engineering
-│   ├── models/               # 4 model definitions
-│   ├── training/             # train loops per modality
-│   ├── serving/              # FastAPI app
-│   └── monitoring/           # drift, calibration
+│   ├── data/                 # load (label fix), scrape, multimodal builder
+│   ├── features/             # URL canonicalization and feature extraction
+│   ├── models/               # fusion and screenshot model definitions
+│   ├── training/             # train_url, train_html, train_screenshot, train_fusion, evaluate
+│   ├── serving/              # FastAPI app, prediction log
+│   └── monitoring/           # Evidently drift report
 ├── tests/
-├── Makefile
-└── pyproject.toml
+├── LIMITATIONS.md            # the leakage write-up
+├── MODEL_CARD.md
+├── ROADMAP.md
+└── Makefile
 ```
 
----
+## Datasets
 
-## Roadmap
-
-See [ROADMAP.md](./ROADMAP.md) for the full 4-phase execution plan and per-phase status. Current shipped state is summarized in the Status section below.
-
----
-
-## Killer features that recruiters notice
-
-1. **Calibrated probabilities**, not just predictions. Use Brier score and reliability diagrams in the README.
-2. **Model cards** documenting data, intended use, fairness considerations, known failure modes.
-3. **Adversarial section** showing how robust the screenshot CNN is under perturbation.
-4. **Latency budget** documented (URL: under 5ms, HTML: under 200ms, image: under 100ms on CPU via ONNX).
-5. **Reproducibility:** make train-all rebuilds every model from scratch in under 4 hours on a single GPU.
-6. **Drift dashboard** screenshot in the README.
-
----
-
-## Quick start
-
-```bash
-make setup            # creates venv, installs deps, sets up pre-commit
-make data             # downloads PhiUSIIL and Tranco
-make train-url        # trains URL GBDT v0.1
-make train-url-v0_2   # trains v0.2 ablation (drops has_https/has_http/length)
-make scrape           # Playwright-renders snapshots into data/processed/snapshots
-make build-multimodal # joins manifest with labels into html/image splits
-make train-html       # trains DistilBERT (needs GPU)
-make train-img        # trains EfficientNet (needs GPU)
-make train-fusion     # trains stacked meta-learner
-make serve            # runs the FastAPI service locally (auto-loads v0.2 if present)
-make eval             # writes reports/evaluation_v0_{1,2}.md
-make drift            # writes reports/drift.html via Evidently
-make docker-up        # API + Postgres via docker compose
-make test             # full suite (34 passing, 1 xfailed)
-```
-
-## Status (2026-04-30)
-
-| Phase | Status |
-|---|---|
-| URL data pipeline + canonicalization | done |
-| URL v0.1 baseline (leaky, documented) | done |
-| URL v0.2 ablation (production) | done |
-| Pre-commit + lint + test gates | done |
-| Scrape pipeline (Playwright) | smoke-tested |
-| Multimodal dataset assembly | done |
-| FastAPI service + Postgres logging | done |
-| Browser extension stub | done |
-| Drift dashboard (Evidently) | done |
-| HTML model training | scaffolded, awaits scraped data + GPU |
-| Screenshot model training | scaffolded, awaits scraped data + GPU |
-| Late-fusion training | scaffolded, awaits modality outputs |
-
-See `MODEL_CARD.md` for metrics and `LIMITATIONS.md` for the methodology
-findings (label-polarity inversion in PhiUSIIL, www-prefix shortcut, path-presence
-shortcut). All three were caught by end-to-end smoke tests, not by reading
-holdout numbers.
-
----
-
-## Stretch goals (after the 4 weeks)
-
-1. Real-time browser extension that flags suspect pages while browsing
-2. Active learning loop to retrain on hard examples from production
-3. LLM-based explanation layer that generates a human-readable reason
-4. Multi-label expansion: phishing, malware, scam, credential harvest
-5. Write it up as a paper or technical blog post for arXiv or your portfolio site
-
----
+1. PhiUSIIL phishing URL dataset (Kaggle, ~235k URLs, balanced). Used for train/val/test.
+2. Tranco top 1M. Top 5,000 used as a benign-only held-out probe.
+3. PhishTank feed, CIRCL screenshots, self-scraped snapshots: planned inputs for the HTML and screenshot models.
 
 ## License
 
-MIT. Phishing detection should be open.
+MIT.
