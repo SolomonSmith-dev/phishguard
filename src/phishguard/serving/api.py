@@ -6,6 +6,9 @@ Endpoints:
 
 Design rules:
     1. URL model is always required and runs synchronously inline (it's cheap).
+       It is served through ONNX Runtime: the LightGBM booster is exported by
+       ``phishguard.training.export_url_onnx`` and the isotonic calibrator is
+       applied in Python on top of the ONNX probability.
     2. HTML and screenshot are optional. If absent, fusion model degrades gracefully.
     3. All ML artifacts loaded once at startup (lazy via lifespan).
     4. Predictions logged to a Postgres table for the drift dashboard.
@@ -20,7 +23,6 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import logging
 import pickle
 import time
@@ -30,10 +32,8 @@ from pathlib import Path
 from typing import Any
 
 import joblib
-import lightgbm as lgb
 import numpy as np
 import onnxruntime as ort
-import pandas as pd
 from fastapi import FastAPI, HTTPException
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -41,18 +41,20 @@ from pydantic import BaseModel, Field
 from phishguard.features import URLFeatureExtractor
 from phishguard.models.fusion import FusionInputs, FusionModel
 from phishguard.serving.prediction_log import PredictionLogger
+from phishguard.serving.url_onnx import UrlOnnxModel
 
 logger = logging.getLogger("phishguard")
 logging.basicConfig(level=logging.INFO)
 
 
 CKPT_DIR = Path("models/checkpoints")
-URL_MODEL = CKPT_DIR / "url_model.lgb"
-URL_CALIB = CKPT_DIR / "url_calibrator.pkl"
-URL_FEATS = CKPT_DIR / "url_features.json"
-HTML_ONNX = CKPT_DIR / "html_model.onnx"
-IMG_ONNX = CKPT_DIR / "screenshot_model.onnx"
-FUSION = CKPT_DIR / "fusion_model.pkl"
+URL_ONNX_NAME = "url_model.onnx"
+URL_CALIB_NAME = "url_calibrator.pkl"
+URL_FEATS_NAME = "url_features.json"
+URL_TLDS_NAME = "url_tld_categories.json"
+HTML_ONNX_NAME = "html_model.onnx"
+IMG_ONNX_NAME = "screenshot_model.onnx"
+FUSION_NAME = "fusion_model.pkl"
 
 
 class PredictRequest(BaseModel):  # type: ignore[misc]
@@ -79,10 +81,15 @@ class PredictResponse(BaseModel):  # type: ignore[misc]
 _state: dict[str, Any] = {}
 
 
-def _pick_url_artifact(v0_2_name: str, v0_1_path: Path) -> Path:
-    """Prefer v0.2 ablation artifact when present; fall back to v0.1."""
-    v0_2 = CKPT_DIR / v0_2_name
-    return v0_2 if v0_2.exists() else v0_1_path
+def _pick_url_artifact(v0_1_name: str) -> Path:
+    """Prefer the v0.2 ablation artifact when present; fall back to v0.1.
+
+    ``url_model.onnx`` -> ``url_model_v0_2.onnx`` and so on. Resolved against
+    ``CKPT_DIR`` at call time so tests can point the app at a fixture directory.
+    """
+    stem, suffix = v0_1_name.rsplit(".", 1)
+    v0_2 = CKPT_DIR / f"{stem}_v0_2.{suffix}"
+    return v0_2 if v0_2.exists() else CKPT_DIR / v0_1_name
 
 
 def _load_calibrator(path: Path) -> Any:
@@ -106,28 +113,37 @@ def _load_calibrator(path: Path) -> Any:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("loading artifacts ...")
-    url_model_path = _pick_url_artifact("url_model_v0_2.lgb", URL_MODEL)
-    url_calib_path = _pick_url_artifact("url_calibrator_v0_2.pkl", URL_CALIB)
-    url_feats_path = _pick_url_artifact("url_features_v0_2.json", URL_FEATS)
-    logger.info("url model: %s", url_model_path)
-    _state["url_booster"] = lgb.Booster(model_file=str(url_model_path))
+    url_onnx_path = _pick_url_artifact(URL_ONNX_NAME)
+    url_calib_path = _pick_url_artifact(URL_CALIB_NAME)
+    url_feats_path = _pick_url_artifact(URL_FEATS_NAME)
+    url_tlds_path = _pick_url_artifact(URL_TLDS_NAME)
+    if not url_onnx_path.exists():
+        raise FileNotFoundError(
+            f"{url_onnx_path} missing. Run `make export-url-onnx` (or `make train-url-v0_2`, "
+            "which exports as its last step) to produce the ONNX URL model."
+        )
+    logger.info("url model (onnxruntime): %s", url_onnx_path)
+    _state["url_session"] = UrlOnnxModel.from_paths(url_onnx_path, url_feats_path, url_tlds_path)
     _state["url_calibrator"] = _load_calibrator(url_calib_path)
-    _state["url_feature_names"] = json.loads(url_feats_path.read_text())
+    _state["url_feature_names"] = _state["url_session"].feature_names
     _state["url_extractor"] = URLFeatureExtractor()
 
-    if HTML_ONNX.exists():
+    html_onnx = CKPT_DIR / HTML_ONNX_NAME
+    img_onnx = CKPT_DIR / IMG_ONNX_NAME
+    fusion_path = CKPT_DIR / FUSION_NAME
+    if html_onnx.exists():
         _state["html_session"] = ort.InferenceSession(
-            str(HTML_ONNX), providers=["CPUExecutionProvider"]
+            str(html_onnx), providers=["CPUExecutionProvider"]
         )
         from transformers import AutoTokenizer
 
         _state["html_tokenizer"] = AutoTokenizer.from_pretrained("models/checkpoints/html_model")
-    if IMG_ONNX.exists():
+    if img_onnx.exists():
         _state["img_session"] = ort.InferenceSession(
-            str(IMG_ONNX), providers=["CPUExecutionProvider"]
+            str(img_onnx), providers=["CPUExecutionProvider"]
         )
 
-    _state["fusion"] = FusionModel.load(FUSION) if FUSION.exists() else None
+    _state["fusion"] = FusionModel.load(fusion_path) if fusion_path.exists() else None
     _state["pred_log"] = PredictionLogger()
     threshold = _state["fusion"].threshold if _state["fusion"] is not None else 0.5
     logger.info("ready (threshold=%.4f)", threshold)
@@ -147,10 +163,9 @@ def healthz() -> dict[str, Any]:
 
 
 def _predict_url(url: str) -> float:
+    """Featurize, run the ONNX session, then apply the isotonic calibrator."""
     rows = _state["url_extractor"].transform([url])
-    df = pd.DataFrame(rows)[_state["url_feature_names"]]
-    df["tld"] = df["tld"].astype("category")
-    raw = _state["url_booster"].predict(df)[0]
+    raw = _state["url_session"].predict_raw(rows)[0]
     return float(_state["url_calibrator"].transform([raw])[0])
 
 

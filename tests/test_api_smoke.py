@@ -11,10 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 _CKPT = Path("models/checkpoints")
-# Accept v0.1 (url_model.lgb) or any versioned artifact (url_model_v*.lgb).
-_URL_ARTIFACTS_PRESENT = bool(
-    list(_CKPT.glob("url_model*.lgb")) if _CKPT.is_dir() else []
-)
+# Accept v0.1 (url_model.onnx) or any versioned artifact (url_model_v*.onnx).
+_URL_ARTIFACTS_PRESENT = bool(list(_CKPT.glob("url_model*.onnx")) if _CKPT.is_dir() else [])
 pytestmark = pytest.mark.skipif(not _URL_ARTIFACTS_PRESENT, reason="URL artifacts not built yet")
 
 
@@ -31,7 +29,7 @@ def test_healthz(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert "url_booster" in body["models_loaded"]
+    assert "url_session" in body["models_loaded"]
 
 
 def test_predict_benign_tranco(client):

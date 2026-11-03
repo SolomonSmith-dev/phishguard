@@ -1,4 +1,4 @@
-.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python
+.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 export-url-onnx train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python
 
 PYTHON := $(shell command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || command -v python3.13 2>/dev/null || command -v python3 2>/dev/null)
 VENV := .venv
@@ -35,6 +35,13 @@ train-url:
 
 train-url-v0_2:
 	$(ACTIVATE) && WANDB_MODE=disabled python -m phishguard.training.train_url --config configs/url_model_v0_2.yaml
+	$(MAKE) export-url-onnx
+
+# Export the trained v0.2 booster to ONNX (what the API serves) and verify it
+# against the native booster. Writes reports/url_onnx_<today>.md.
+export-url-onnx:
+	$(ACTIVATE) && python -m phishguard.training.export_url_onnx --config configs/url_model_v0_2.yaml \
+	  --report reports/url_onnx_$$(date +%Y-%m-%d).md
 
 train-html:
 	$(ACTIVATE) && python -m phishguard.training.train_html --config configs/html_model.yaml
