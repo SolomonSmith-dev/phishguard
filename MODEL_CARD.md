@@ -61,7 +61,15 @@ with Tranco-as-benign. See `LIMITATIONS.md`.
 * Tranco probe FPR@0.7 = 1.54%, median p_phish = 0.0125.
 * Top feature: `subdomain_depth` at 27.2% of gain. Top-3 = 57.9%. The
   leakage tests pass.
-* This is the model the FastAPI service auto-loads when present.
+* This is the model the FastAPI service serves. It runs as
+  `url_model_v0_2.onnx` in ONNX Runtime (exported by `make export-url-onnx`
+  from the LightGBM booster); the isotonic calibrator is applied in Python
+  on the ONNX probability. Over the full test split (23,537 URLs) and the
+  Tranco probe (5,000 URLs) the ONNX graph differs from the native booster
+  by at most 8.9e-8, and the served-path metrics are test AUC 0.9942,
+  Tranco FPR@0.7 1.54% (`reports/url_onnx_2026-11-03.md`).
+* Re-trained from scratch on 2026-11-03 (`make train-url-v0_2`, 24 s on an
+  M4 MacBook Air): the report file came out byte-identical.
 
 ### Why we ship v0.2 even though v0.1 has higher Tranco AUC
 
@@ -73,8 +81,10 @@ defend.
 
 ## Calibration
 
-Isotonic regression fit on the val split, applied at prediction time. Brier
-on the test set is reported above. Reliability diagrams are not yet
+Isotonic regression fit on the val split, applied at prediction time. In
+the served path it runs in Python on top of the ONNX Runtime probability;
+it is not folded into the ONNX graph. Brier on the test set is reported
+above. Reliability diagrams are not yet
 generated; planned in `notebooks/url_calibration.ipynb`.
 
 ## Evaluation methodology
@@ -117,8 +127,13 @@ redacted before persistence.
 ## Reproducibility
 
 `make data` then `make train-url` rebuilds v0.1 from scratch.
-`make train-url-v0_2` rebuilds the ablation. Both are deterministic at
-seed=42. End-to-end runs in under 10 minutes on a 2024 MacBook M-series.
+`make train-url-v0_2` rebuilds the ablation and exports it to ONNX. Both
+are deterministic at seed=42 (verified 2026-11-03: identical metrics and
+report). End-to-end runs in under 10 minutes on a 2024 MacBook M-series.
+The ONNX export keeps LightGBM's float64 split thresholds
+(`nodes_values_as_tensor`, ai.onnx.ml opset 3); with the converter's
+default float32 thresholds 40 of 5,000 test URLs changed branch, max
+|diff| 9.3e-3.
 HTML/screenshot models will require a CUDA host.
 
 ## Versioning
@@ -126,3 +141,5 @@ HTML/screenshot models will require a CUDA host.
 * `v0.1-url-baseline` -- initial URL model with documented leakage.
 * `v0.1-hardened` -- added pre-commit gate and the no-leakage test.
 * `v0.2-url-ablation` -- v0.2 model trained, leakage test now passing.
+* 2026-11-03 (untagged) -- leakage tests run as a pre-commit hook and in
+  GitHub Actions; URL model served through ONNX Runtime.

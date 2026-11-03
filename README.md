@@ -18,14 +18,15 @@ Full write-up with before/after numbers: [LIMITATIONS.md](./LIMITATIONS.md).
 
 | Claim | Value | Source file |
 |---|---|---|
-| Test AUC, v0.2 production model | 0.9943 | `reports/url_baseline_v0_2.txt` (the `make eval` re-run in `reports/evaluation_v0_2.md` rounds to 0.9942) |
+| Test AUC, v0.2 production model | 0.9943 raw booster; 0.9942 through the served path (ONNX session + isotonic calibrator) | `reports/url_baseline_v0_2.txt` (re-trained 2026-11-03 with `make train-url-v0_2`, byte-identical report); `reports/url_onnx_2026-11-03.md`; `reports/evaluation_v0_2.md` |
 | Test AP / F1 / calibrated Brier | 0.9948 / 0.9782 / 0.0157 | `reports/url_baseline_v0_2.txt` |
-| False-positive rate on Tranco top-5,000 (held out, never trained on), threshold 0.7 | 1.54% (2.52% at 0.5, 0.90% at 0.9) | `reports/evaluation_v0_2.md`, `LIMITATIONS.md` |
+| False-positive rate on Tranco top-5,000 (held out, never trained on), threshold 0.7 | 1.54% (2.52% at 0.5, 0.90% at 0.9), identical through the ONNX path | `reports/evaluation_v0_2.md`, `reports/url_onnx_2026-11-03.md`, `LIMITATIONS.md` |
 | Top feature gain after ablation | `subdomain_depth` 27.16%, top-3 57.9% | `reports/url_baseline_v0_2.txt` |
-| Tests | 35 test functions in `tests/`, 1 marked `known_fail` (xfail) on purpose for the leaky v0.1 model | `grep -c "^def test_" tests/*.py`; run with `make test` |
-| Leakage regression tests | `tests/test_no_leakage.py`, `tests/test_label_polarity.py` | run under `pytest`; model-dependent tests skip until `make train-url-v0_2` has produced artifacts |
-| Pre-commit gate | ruff, ruff-format, mypy (strict), yaml/toml checks | `.pre-commit-config.yaml` |
-| CI | none yet | no `.github/workflows` |
+| Tests | 40 test functions in `tests/`, 1 marked `known_fail` (xfail) on purpose for the leaky v0.1 model | `grep -c "^def test_" tests/*.py`; run with `make test` |
+| ONNX serving | `POST /predict` runs the URL model through `onnxruntime.InferenceSession`; max abs diff vs the native booster 8.9e-8 over all 23,537 test URLs and 5,000 Tranco URLs, zero rows above 1e-5 | `src/phishguard/serving/url_onnx.py`, `reports/url_onnx_2026-11-03.md`, `tests/test_onnx_serving.py` |
+| Leakage regression tests | `tests/test_no_leakage.py`, `tests/test_label_polarity.py`, `tests/test_canonicalize.py` | run on every commit by the `leakage-tests` pre-commit hook and in CI; model-dependent tests skip until `make train-url-v0_2` has produced artifacts |
+| Pre-commit gate | ruff, ruff-format, mypy (strict), yaml/toml checks, `leakage-tests` (pytest on the three leakage test files, always runs) | `.pre-commit-config.yaml`; verified by planting an inverted label and disabled `www.` stripping: `pre-commit run --all-files` exits 1 with `3 failed, 10 passed, 2 skipped` |
+| CI | GitHub Actions, Python 3.11: install, `pre-commit run leakage-tests`, full `pytest` | `.github/workflows/ci.yml` (added 2026-11-03, first run pending push) |
 
 Model card with calibration method, failure modes and versioning: [MODEL_CARD.md](./MODEL_CARD.md).
 
@@ -34,9 +35,10 @@ Model card with calibration method, failure modes and versioning: [MODEL_CARD.md
 ```bash
 make setup            # venv, deps, playwright chromium, pre-commit hooks
 make data             # downloads PhiUSIIL and Tranco
-make train-url-v0_2   # trains the production LightGBM ablation (under 10 min on an M-series Mac, seed 42)
+make train-url-v0_2   # trains the production LightGBM ablation (24 s on an M4 MacBook Air, seed 42), then exports it to ONNX
+make export-url-onnx  # re-export the booster to ONNX and write reports/url_onnx_<date>.md
 make test             # pytest; leakage and label tests run once artifacts exist
-make serve            # FastAPI on :8000, auto-loads v0.2 when present
+make serve            # FastAPI on :8000, loads url_model_v0_2.onnx through ONNX Runtime
 curl -s localhost:8000/predict -H 'content-type: application/json' \
   -d '{"url":"http://accounts-verify.secure-login.xyz/login.php"}'
 make eval             # writes reports/evaluation_v0_{1,2}.md
@@ -50,7 +52,9 @@ make docker-up        # API + Postgres via docker compose
 - URL data pipeline: PhiUSIIL loader with label correction, Tranco probe set, URL canonicalization (`src/phishguard/data/`, `src/phishguard/features/`).
 - 47 numeric URL features plus TLD as categorical (`src/phishguard/features/url_features.py`).
 - LightGBM URL classifier, 5-fold stratified CV, isotonic calibration. v0.1 (leaky, kept as a regression marker) and v0.2 (production).
-- FastAPI service: `GET /healthz`, `POST /predict` taking URL plus optional HTML and screenshot. URL path runs the native LightGBM booster and calibrator (`src/phishguard/serving/api.py`).
+- FastAPI service: `GET /healthz`, `POST /predict` taking URL plus optional HTML and screenshot. URL path runs the exported LightGBM graph in ONNX Runtime, then the isotonic calibrator in Python (`src/phishguard/serving/api.py`, `src/phishguard/serving/url_onnx.py`).
+- ONNX export with verification: `src/phishguard/training/export_url_onnx.py` converts the booster with onnxmltools, restores the float64 split thresholds that the converter rounds to float32, and checks the graph against the native booster (`reports/url_onnx_2026-11-03.md`).
+- GitHub Actions CI running the leakage hook and the full test suite (`.github/workflows/ci.yml`).
 - Prediction logging to Postgres with JSONL fallback and credential redaction on query strings (`src/phishguard/serving/prediction_log.py`, `tests/test_prediction_log.py`).
 - Evidently drift report script (`src/phishguard/monitoring/drift.py`, `make drift`).
 - Docker image and compose file with Postgres (`docker/`).
@@ -60,12 +64,12 @@ make docker-up        # API + Postgres via docker compose
 **Scaffolded, not trained or measured**
 
 - HTML model (DistilBERT fine-tune, `training/train_html.py`), screenshot model (EfficientNet-B0, `training/train_screenshot.py`) and the stacked logistic meta-learner (`training/train_fusion.py`). Training scripts and configs exist; no scraped corpus and no GPU run yet, so there are no checkpoints and no numbers.
-- ONNX Runtime serving. `api.py` opens ONNX sessions for the HTML and screenshot models when their files exist. Those files have never been produced, so no ONNX inference has run.
+- ONNX Runtime for the HTML and screenshot models. `api.py` opens their sessions when the files exist; those files have never been produced. Only the URL model runs through ONNX today.
 - Late-fusion scoring. Without a fusion artifact the API averages whatever modality probabilities it has, URL only in practice.
 
 **Planned, not started**
 
-- GitHub Actions CI, public deploy (Fly.io or Cloud Run), reliability diagrams, adversarial eval on the screenshot model, MLflow registry (dependency listed, not wired), Prometheus latency metrics.
+- Public deploy (Fly.io or Cloud Run), reliability diagrams, adversarial eval on the screenshot model, MLflow registry (dependency listed, not wired), Prometheus latency metrics.
 - v0.3 data fixes listed in `LIMITATIONS.md`: add Common Crawl URLs so the legitimate class includes path-bearing URLs, or move to a character-level model that cannot be handed a featurizer shortcut.
 
 Original 4-phase plan: [ROADMAP.md](./ROADMAP.md).
@@ -91,9 +95,9 @@ Late fusion over early fusion because the modalities have very different cost. U
 |---|---|---|
 | Modeling | LightGBM, scikit-learn (isotonic calibration) | PyTorch, HuggingFace Transformers, torchvision |
 | Tracking | Weights and Biases (optional, `WANDB_MODE=disabled` in the v0.2 target) | MLflow |
-| Serving | FastAPI, Uvicorn, Pydantic | ONNX Runtime |
+| Serving | FastAPI, Uvicorn, Pydantic, ONNX Runtime (URL model), onnxmltools (export) | ONNX Runtime for HTML and screenshot models |
 | Data | pandas, tldextract, Playwright (smoke-tested) | PhishTank feed, CIRCL screenshots |
-| Quality | pytest, hypothesis, ruff, mypy strict, pre-commit | GitHub Actions |
+| Quality | pytest, hypothesis, ruff, mypy strict, pre-commit (incl. leakage tests), GitHub Actions | |
 | Ops | Docker, docker compose, Postgres, Evidently | Prometheus, Fly.io / Cloud Run |
 
 ## Repo layout
