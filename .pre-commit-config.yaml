@@ -26,3 +26,12 @@ repos:
           - "types-Pillow"
           - "types-PyYAML"
         files: ^src/
+
+  - repo: local
+    hooks:
+      - id: leakage-tests
+        name: leakage regression tests (label polarity, canonicalization, feature dominance)
+        entry: pytest tests/test_no_leakage.py tests/test_label_polarity.py tests/test_canonicalize.py -q --no-cov -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        always_run: true

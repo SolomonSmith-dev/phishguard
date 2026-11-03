@@ -15,7 +15,7 @@ setup: check-python
 	$(ACTIVATE) && pip install --upgrade pip
 	$(ACTIVATE) && pip install -e ".[dev]"
 	$(ACTIVATE) && playwright install chromium
-	$(ACTIVATE) && pre-commit install || true
+	$(ACTIVATE) && pre-commit install
 
 data:
 	$(ACTIVATE) && python -m phishguard.data.load --download
