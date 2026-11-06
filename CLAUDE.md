@@ -1,3 +1,5 @@
+<!-- LifeOS-status: MAINTENANCE 2026-05-15 -->
+
 # PhishGuard - Claude Code context
 
 Multi-modal phishing detector. Late fusion of URL gradient boosting + DistilBERT
@@ -71,3 +73,7 @@ Multi-modal phishing detector. Late fusion of URL gradient boosting + DistilBERT
     git log --oneline -5
     git tag -l
     .venv/bin/python scripts/inspect_url_baseline.py
+
+## ICM / Graphify
+
+When `graphify-out/graph.json` exists, answer codebase questions with `graphify query "<q>"` (also `path` / `explain`) before grep or explore agents. Rebuild with `graphify update` after large structural changes. Dual Develop: Hermes-first product build; Cursor for git/PR/evals/parallel. No secrets in commits or docs. Ops spine: `~/Projects/personal-tech-ops`.
