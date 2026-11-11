@@ -26,7 +26,7 @@ Full write-up with before/after numbers: [LIMITATIONS.md](./LIMITATIONS.md).
 | ONNX serving | `POST /predict` runs the URL model through `onnxruntime.InferenceSession`; max abs diff vs the native booster 8.9e-8 over all 23,537 test URLs and 5,000 Tranco URLs, zero rows above 1e-5 | `src/phishguard/serving/url_onnx.py`, `reports/url_onnx_2026-11-03.md`, `tests/test_onnx_serving.py` |
 | Leakage regression tests | `tests/test_no_leakage.py`, `tests/test_label_polarity.py`, `tests/test_canonicalize.py` | run on every commit by the `leakage-tests` pre-commit hook and in CI; model-dependent tests skip until `make train-url-v0_2` has produced artifacts |
 | Pre-commit gate | ruff, ruff-format, mypy (strict), yaml/toml checks, `leakage-tests` (pytest on the three leakage test files, always runs) | `.pre-commit-config.yaml`; verified by planting an inverted label and disabled `www.` stripping: `pre-commit run --all-files` exits 1 with `3 failed, 10 passed, 2 skipped` |
-| CI | GitHub Actions, Python 3.11: install, `pre-commit run leakage-tests`, full `pytest` | `.github/workflows/ci.yml` (added 2026-11-03, first run pending push) |
+| CI | GitHub Actions, Python 3.11: install, `pre-commit run leakage-tests`, full `pytest` | `.github/workflows/ci.yml` (added 2026-11-03; passing on `main`) |
 
 Model card with calibration method, failure modes and versioning: [MODEL_CARD.md](./MODEL_CARD.md).
 
