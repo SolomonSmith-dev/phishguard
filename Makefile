@@ -52,6 +52,14 @@ train-img:
 train-fusion:
 	$(ACTIVATE) && python -m phishguard.training.train_fusion --config configs/fusion.yaml
 
+# Truthful detector demo frame for the README first screen. Runs the served
+# /predict endpoint (playwright/curl-free: httpx). Exits non-zero with a clear
+# message if no detector checkpoints exist. See docs/multimodal-training-status.md.
+capture-demo:
+	$(ACTIVATE) && python scripts/capture_detector_demo.py \
+	  --server http://localhost:8000 \
+	  --out docs/detector_demo.png
+
 train-all: train-url train-html train-img train-fusion
 
 serve:

@@ -70,7 +70,7 @@ make smoke-live       # 7 checks against https://phishguard.soloserver.xyz
 
 **Scaffolded, not trained or measured**
 
-- HTML model (DistilBERT fine-tune, `training/train_html.py`), screenshot model (EfficientNet-B0, `training/train_screenshot.py`) and the stacked logistic meta-learner (`training/train_fusion.py`). Training scripts and configs exist; no scraped corpus and no GPU run yet, so there are no checkpoints and no numbers.
+- HTML model (DistilBERT fine-tune, `training/train_html.py`), screenshot model (EfficientNet-B0, `training/train_screenshot.py`) and the stacked logistic meta-learner (`training/train_fusion.py`). Training scripts and configs exist. **Training is not runnable yet because there is no labeled multimodal corpus**: the 22 scraped snapshots on disk are all benign pages and the URL label files join to zero of them. No checkpoints and no numbers, precisely because none can be produced honestly today. See [`docs/multimodal-training-status.md`](docs/multimodal-training-status.md) for what was verified and what training needs.
 - ONNX Runtime for the HTML and screenshot models. `api.py` opens their sessions when the files exist; those files have never been produced. Only the URL model runs through ONNX today.
 - Late-fusion scoring. Without a fusion artifact the API averages whatever modality probabilities it has, URL only in practice.
 
@@ -117,7 +117,7 @@ phishguard/
 ├── docs/deploy.md            # live deploy, rollback, privacy and limits
 ├── extension/                # Chrome MV3 stub
 ├── reports/                  # training and eval reports cited above
-├── scripts/                  # deploy and live smoke test
+├── scripts/                  # deploy, live smoke test, detector demo capture
 ├── src/phishguard/
 │   ├── data/                 # load (label fix), scrape, multimodal builder
 │   ├── features/             # URL canonicalization and feature extraction
