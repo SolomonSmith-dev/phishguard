@@ -4,6 +4,14 @@
 
 A phishing URL classifier I had to break before I could trust it. The public dataset's labels were upside down and every legitimate URL in it started with `https://www.`. The model that ships is the one that still passes the leakage tests after those shortcuts were removed.
 
+**Measured, not claimed** (from `reports/`, on a held-out test split of 23,537 URLs and a benign-only Tranco top-5,000 probe the model never trained on):
+
+| Metric | Value |
+|---|---|
+| Test AUC | **0.9943** (0.9942 through the served ONNX + isotonic path) |
+| False-positive rate on Tranco top-5,000, threshold 0.7 | **1.54%** (2.52% at 0.5, 0.90% at 0.9) |
+| Test AP / F1 / calibrated Brier | 0.9948 / 0.9782 / 0.0157 |
+
 ## The leakage finding
 
 PhiUSIIL (Kaggle, ~235k URLs) gives a URL-only LightGBM model AUC above 0.99 on its own holdout. Three things made that number worthless, all caught by hand-crafted smoke tests rather than by reading the holdout:
