@@ -35,4 +35,8 @@ RUN python -c "import tldextract; print(tldextract.extract('http://a.b.example.c
     && test -n "$(find "$TLDEXTRACT_CACHE" -name '*.json' -print -quit)"
 
 EXPOSE 7860
-CMD ["uvicorn", "phishguard.serving.api:app", "--host", "0.0.0.0", "--port", "7860", "--no-server-header"]
+# tldextract takes a lock file even to read its cache, which fails on a
+# read-only root filesystem (the home-server run uses --read-only). Copy the
+# baked list to /tmp at start and point tldextract there; this works on a
+# writable filesystem too.
+CMD ["sh", "-c", "cp -r \"$TLDEXTRACT_CACHE\" /tmp/tldextract && export TLDEXTRACT_CACHE=/tmp/tldextract && exec uvicorn phishguard.serving.api:app --host 0.0.0.0 --port 7860 --no-server-header"]

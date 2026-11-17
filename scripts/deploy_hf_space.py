@@ -69,6 +69,19 @@ def git(*args: str) -> str:
     ).stdout.strip()
 
 
+def dirty_state() -> str:
+    """Tracked changes anywhere, plus untracked files under the folders stage()
+    copies: those would ship under HEAD's commit hash without being in HEAD."""
+    return "\n".join(
+        s
+        for s in (
+            git("status", "--porcelain", "--untracked-files=no"),
+            git("status", "--porcelain", "--untracked-files=all", "--", "src", "deploy"),
+        )
+        if s
+    )
+
+
 def stage(stage_dir: Path) -> str:
     """Write the Space build context to stage_dir and return the manifest text."""
     missing = [name for name in ARTIFACTS if not (CKPT_DIR / name).is_file()]
@@ -149,16 +162,7 @@ def main() -> int:
     ap.add_argument("--wait-timeout", type=int, default=900)
     args = ap.parse_args()
 
-    # Tracked changes anywhere, plus untracked files under the folders stage()
-    # copies: those would ship under HEAD's commit hash without being in HEAD.
-    dirty = "\n".join(
-        s
-        for s in (
-            git("status", "--porcelain", "--untracked-files=no"),
-            git("status", "--porcelain", "--untracked-files=all", "--", "src", "deploy"),
-        )
-        if s
-    )
+    dirty = dirty_state()
     if dirty and not args.stage_only and not args.allow_dirty:
         sys.exit(
             f"working tree has uncommitted changes; commit first or pass --allow-dirty:\n{dirty}"

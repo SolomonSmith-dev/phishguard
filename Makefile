@@ -1,4 +1,4 @@
-.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 export-url-onnx train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python deploy-hf deploy-hf-stage docker-hf smoke-live smoke-fixtures
+.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 export-url-onnx train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python deploy-home deploy-hf deploy-hf-stage docker-hf smoke-live smoke-fixtures
 
 PYTHON := $(shell command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || command -v python3.13 2>/dev/null || command -v python3 2>/dev/null)
 VENV := .venv
@@ -91,9 +91,17 @@ docker-up:
 docker-down:
 	docker compose -f docker/docker-compose.yml down
 
-# ---- Public deploy: Hugging Face Docker Space (free CPU basic). See docs/deploy.md.
+# ---- Public deploy. See docs/deploy.md.
+# Live: home-server container behind the Cloudflare tunnel.
+HOME_HOST ?= home-server
+LIVE_URL ?= https://phishguard.soloserver.xyz
+
+# Build HEAD on the home server and swap the container; waits for /healthz.
+deploy-home:
+	$(ACTIVATE) && python scripts/deploy_home_server.py --host $(HOME_HOST)
+
+# Alternative: Hugging Face Docker Space. Needs a PRO plan since 2026-11 (402 otherwise).
 HF_SPACE ?= SolomonSmith-dev/phishguard
-LIVE_URL ?= https://solomonsmith-dev-phishguard.hf.space
 
 # Write the Space build context to build/hf-space without uploading.
 deploy-hf-stage:

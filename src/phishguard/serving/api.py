@@ -269,7 +269,9 @@ def predict(req: PredictRequest) -> PredictResponse:
         )
     except Exception as e:
         logger.exception("url model failed")
-        raise HTTPException(status_code=500, detail=f"url model failure: {e}") from e
+        # Full exception is in the server log; the public response stays generic
+        # so it never carries file paths or internals.
+        raise HTTPException(status_code=500, detail="url model failure") from e
 
     p_html = None
     if req.html:
