@@ -114,6 +114,9 @@ def test_public_mode_never_persists_raw_url(tmp_path, monkeypatch) -> None:
         ("  javascript:alert('XSS6')", "XSS6"),  # no host at all
         ("x.com/login?pass=NOSCHEME7", "NOSCHEME7"),  # no scheme
         ("http://[::1/TOKEN8", "TOKEN8"),  # unparseable authority
+        ("https://x.com\\reset\\BSLASH9", "BSLASH9"),  # backslash: path to a browser
+        ("https://x.com%2fENC10/", "ENC10"),  # percent-encoded slash in the host
+        ("https://x.com;SEMI11/", "SEMI11"),
     ],
 )
 def test_host_only_drops_every_secret_bearing_part(url: str, secret: str) -> None:
@@ -124,6 +127,13 @@ def test_host_only_drops_every_secret_bearing_part(url: str, secret: str) -> Non
 
 def test_host_only_keeps_last_host_after_at() -> None:
     assert host_only("http://paypal.com@evil.example/login") == "http://evil.example"
+
+
+def test_host_only_normal_hosts() -> None:
+    assert host_only("https://Example.COM:8443/x") == "https://example.com"
+    assert host_only("http://192.168.0.1/admin") == "http://192.168.0.1"
+    assert host_only("http://[2001:db8::1]/x") == "http://2001:db8::1"
+    assert host_only("http://例え.テスト/ログイン") == "http://xn--r8jz45g.xn--zckzah"
 
 
 def test_fallback_stops_at_size_cap(tmp_path, monkeypatch) -> None:

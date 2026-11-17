@@ -52,6 +52,8 @@ _REDACT_RE = re.compile(
 )
 # user:password@ in the authority part.
 _USERINFO_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#@]*@")
+# What host_only() will persist: DNS labels (ASCII after IDNA) or an IP literal.
+_HOST_RE = re.compile(r"[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.?|[0-9a-f:.]+")
 _FALLBACK_PATH = Path("/tmp/phishguard_predictions.jsonl")
 # The file fallback has no rotation; stop appending past this size instead of
 # filling the disk (the public Space has no Postgres, so this is its only sink).
@@ -100,6 +102,15 @@ def host_only(url: str) -> str:
         return "<unparseable>"
     if not host or not scheme.isascii() or not scheme.isalnum():
         return "<no-host>"
+    # urlsplit and browsers disagree on some authorities (a backslash is part of
+    # the host to urlsplit, a path separator to a browser), so whatever came out
+    # must also be a plain hostname or IP literal before it is written.
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return "<invalid-host>"
+    if not _HOST_RE.fullmatch(host):
+        return "<invalid-host>"
     return f"{scheme}://{host}"
 
 
