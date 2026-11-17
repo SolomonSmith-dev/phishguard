@@ -33,6 +33,7 @@ import threading
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg import sql
@@ -75,14 +76,38 @@ create table if not exists predictions (
 
 
 def redact(url: str) -> str:
+    """Best-effort credential scrub for local ops logs. A denylist cannot catch
+    every encoding (percent-encoded keys, secrets in paths or nested URLs), so
+    public mode does not rely on it: see host_only()."""
     return _USERINFO_RE.sub(r"\1<redacted>@", _REDACT_RE.sub(r"\1<redacted>", url))
+
+
+def host_only(url: str) -> str:
+    """Scheme and host only: what the public deploy persists.
+
+    Path, query, fragment, port and any user:password part are dropped, so no
+    parser trick in those parts can leak into the log. urlsplit's hostname takes
+    what follows the last '@', so 'a@b@evil.com' stores 'evil.com'.
+    """
+    text = url.strip()
+    if "://" not in text:
+        text = "http://" + text
+    try:
+        parts = urlsplit(text)
+        host = parts.hostname or ""
+        scheme = parts.scheme.lower()
+    except ValueError:
+        return "<unparseable>"
+    if not host or not scheme.isascii() or not scheme.isalnum():
+        return "<no-host>"
+    return f"{scheme}://{host}"
 
 
 class PredictionLogger:
     def __init__(self, dsn: str | None = None, store_raw_url: bool | None = None) -> None:
         self.dsn = dsn or os.getenv("DATABASE_URL")
         # Raw URLs are kept by default for local ops. A public deploy sets
-        # PHISHGUARD_STORE_RAW_URL=0 so only the redacted form is persisted.
+        # PHISHGUARD_STORE_RAW_URL=0 so only scheme://host is persisted.
         if store_raw_url is None:
             store_raw_url = os.getenv("PHISHGUARD_STORE_RAW_URL", "1") != "0"
         self.store_raw_url = store_raw_url
@@ -100,10 +125,12 @@ class PredictionLogger:
                 self._conn = None
 
     def log(self, row: dict[str, Any]) -> None:
-        redacted = redact(row.get("url", ""))
-        row = {**row, "url_redacted": redacted}
-        if not self.store_raw_url:
-            row["url"] = redacted
+        raw = row.get("url", "")
+        if self.store_raw_url:
+            row = {**row, "url_redacted": redact(raw)}
+        else:
+            stored = host_only(raw)
+            row = {**row, "url": stored, "url_redacted": stored}
         if self._conn is not None:
             try:
                 with self._lock:

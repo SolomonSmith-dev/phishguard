@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import json
 
-from phishguard.serving.prediction_log import PredictionLogger, redact
+import pytest
+from phishguard.serving.prediction_log import PredictionLogger, host_only, redact
 
 
 def test_redacts_token_param() -> None:
@@ -88,18 +89,41 @@ def test_redacts_oauth_and_signed_url_params() -> None:
 
 
 def test_public_mode_never_persists_raw_url(tmp_path, monkeypatch) -> None:
-    """PHISHGUARD_STORE_RAW_URL=0 (the public Space) keeps only the redacted URL."""
+    """PHISHGUARD_STORE_RAW_URL=0 (the public Space) keeps only scheme://host."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("PHISHGUARD_STORE_RAW_URL", "0")
     fallback = tmp_path / "predictions.log"
     monkeypatch.setattr("phishguard.serving.prediction_log._FALLBACK_PATH", fallback)
 
-    PredictionLogger().log({"url": "https://u:pw@x.com/?token=secret", **_ROW})
+    PredictionLogger().log({"url": "https://u:pw@x.com:8443/reset/S3CR3T?token=secret", **_ROW})
 
     text = fallback.read_text()
-    assert "secret" not in text and "pw@" not in text
+    assert "secret" not in text and "S3CR3T" not in text and "pw" not in text
     rec = json.loads(text.strip())
-    assert rec["url"] == rec["url_redacted"] == "https://<redacted>@x.com/?token=<redacted>"
+    assert rec["url"] == rec["url_redacted"] == "https://x.com"
+
+
+@pytest.mark.parametrize(
+    ("url", "secret"),
+    [
+        ("https://x.com/cb?%74oken=ENC1", "ENC1"),  # percent-encoded key
+        ("https://x.com/cb?my_token=SUF2", "SUF2"),  # key not on the denylist
+        ("https://x.com/r?next=https%3A%2F%2Fy.com%3Ftoken%3DNEST3", "NEST3"),  # nested URL
+        ("https://x.com/magic/PATH4", "PATH4"),  # secret in the path
+        ("https://a@b:PW5@evil.com/", "PW5"),  # double @
+        ("  javascript:alert('XSS6')", "XSS6"),  # no host at all
+        ("x.com/login?pass=NOSCHEME7", "NOSCHEME7"),  # no scheme
+        ("http://[::1/TOKEN8", "TOKEN8"),  # unparseable authority
+    ],
+)
+def test_host_only_drops_every_secret_bearing_part(url: str, secret: str) -> None:
+    out = host_only(url)
+    assert secret not in out
+    assert out.startswith(("http://", "https://", "<"))
+
+
+def test_host_only_keeps_last_host_after_at() -> None:
+    assert host_only("http://paypal.com@evil.example/login") == "http://evil.example"
 
 
 def test_fallback_stops_at_size_cap(tmp_path, monkeypatch) -> None:

@@ -248,7 +248,7 @@ footer pre {
       <section>
         <h2>Limits</h2>
         <p>URL only. The HTML and screenshot models are scaffolded but not trained, because there is no labeled multimodal corpus yet. The served threshold is 0.50; the headline false-positive rate in the README is quoted at 0.70.</p>
-        <p>Submitted URLs are logged inside this container for drift monitoring. Only a redacted copy is stored: any <code>user:password@</code> part and credential-like parameters (tokens, keys, codes, signatures) are removed first. The log is not published and is wiped when the container restarts.</p>
+        <p>Each request is logged inside this container for drift monitoring, but only the scheme and host of the URL are stored (for example <code>https://example.com</code>). The path, query string, fragment and any <code>user:password@</code> part are dropped before anything is written. The log is not published and is wiped when the container restarts.</p>
       </section>
     </div>
 

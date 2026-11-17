@@ -64,8 +64,10 @@ again. Every deploy commit on the Space names the source commit, and
   up to 240 s for `/healthz`.
 - Disk is not persistent. The prediction log (`/tmp/phishguard_predictions.jsonl`)
   is lost on every restart and is not published. The image sets
-  `PHISHGUARD_STORE_RAW_URL=0`, so only the redacted URL is stored (userinfo and
-  credential-like parameters removed), and the file stops growing at 50 MB.
+  `PHISHGUARD_STORE_RAW_URL=0`, so only `scheme://host` is stored (path, query,
+  fragment, port and userinfo dropped, see `host_only()` in
+  `serving/prediction_log.py`), and the file stops growing at 50 MB. Local runs
+  keep the raw URL plus a best-effort redacted copy, as before.
 - Request bodies over 13 MB get 413 before they are read; 422 responses do not
   echo the rejected input.
 - No Postgres: `DATABASE_URL` is unset, so the logger uses the file fallback.
