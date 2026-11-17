@@ -49,6 +49,19 @@ def test_predict_rejects_oversized_html(client):
         "/predict", json={"url": "https://google.com", "html": "a" * (MAX_HTML_CHARS + 1)}
     )
     assert r.status_code == 422
+    # The error must not echo the 2 MB input back.
+    assert len(r.content) < 2_000
+
+
+def test_predict_rejects_body_over_cap(client):
+    from phishguard.serving.api import MAX_BODY_BYTES
+
+    r = client.post(
+        "/predict",
+        content=b'{"url":"https://google.com","pad":"' + b"a" * MAX_BODY_BYTES + b'"}',
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 413
 
 
 def test_predict_benign_tranco(client):

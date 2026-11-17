@@ -215,8 +215,8 @@ footer pre {
     <div class="examples" aria-label="Example URLs">
       <span>Try:</span>
       <button class="ex" type="button" data-url="http://accounts-verify.secure-login.xyz/login.php">a phishing-shaped link</button>
-      <button class="ex" type="button" data-url="https://hd74-nb-5d.web.app/">a held-out PhiUSIIL phish</button>
-      <button class="ex" type="button" data-url="https://google.com">a top site</button>
+      <button class="ex" type="button" data-url="https://australiapostm.com/fad/" title="From the PhiUSIIL test split; its domain never appears in the training or validation data">a held-out phish</button>
+      <button class="ex" type="button" data-url="https://github.com">a top site</button>
       <button class="ex" type="button" data-url="https://apple-dns.net">a top-50 site it gets wrong</button>
     </div>
   </form>
@@ -233,7 +233,7 @@ footer pre {
     <div>
       <section>
         <h2>What the number is</h2>
-        <p>A LightGBM model over 47 numeric features of the URL string plus its TLD, exported to ONNX and run in ONNX Runtime, with an isotonic calibrator on top, fit on the validation split so scores track observed phishing rates. The calibrated Brier score on the test split is 0.0157; per-bin reliability has not been plotted yet.</p>
+        <p>A LightGBM model over 41 numeric features of the URL string plus its TLD, exported to ONNX and run in ONNX Runtime, with an isotonic calibrator on top, fit on the validation split so scores track observed phishing rates. The calibrated Brier score on the test split is 0.0157; per-bin reliability has not been plotted yet.</p>
         <p>It sees the URL and nothing else. A clean-looking URL on a compromised site scores clean, and a legitimate site with an odd hostname can score high.</p>
       </section>
       <section>
@@ -248,7 +248,7 @@ footer pre {
       <section>
         <h2>Limits</h2>
         <p>URL only. The HTML and screenshot models are scaffolded but not trained, because there is no labeled multimodal corpus yet. The served threshold is 0.50; the headline false-positive rate in the README is quoted at 0.70.</p>
-        <p>Submitted URLs are logged inside this container for drift monitoring, with credential-like query parameters redacted. The log is not published and is wiped when the container restarts.</p>
+        <p>Submitted URLs are logged inside this container for drift monitoring. Only a redacted copy is stored: any <code>user:password@</code> part and credential-like parameters (tokens, keys, codes, signatures) are removed first. The log is not published and is wiped when the container restarts.</p>
       </section>
     </div>
 
@@ -379,7 +379,7 @@ footer pre {
       flagged ? "Flagged as phishing" : "Not flagged");
     var rate = FLAG_RATE[String(thr)];
     v.appendChild(el("span", "verdict-sub", "at threshold " + thr.toFixed(2) +
-      (rate ? ". At this threshold " + rate + " of top legitimate sites are also flagged." : ".")));
+      (rate ? ". At this threshold, " + rate + " of the Tranco top 5,000 legitimate sites are flagged." : ".")));
     readout.appendChild(v);
     out.appendChild(readout);
     out.appendChild(renderScale(p, thr));

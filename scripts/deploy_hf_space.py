@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import shutil
 import subprocess
@@ -106,7 +107,9 @@ def serving_commit(app_url: str) -> str | None:
         with urllib.request.urlopen(req, timeout=20) as r:
             build = json.loads(r.read()).get("build")
             return str(build) if build else None
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    # OSError covers URLError, timeouts and dropped connections while the Space
+    # restarts; none of them should abort the wait loop.
+    except (OSError, http.client.HTTPException, ValueError):
         return None
 
 
@@ -119,7 +122,12 @@ def wait_until_serving(api: HfApi, repo_id: str, app_url: str, commit: str, time
     deadline = time.monotonic() + timeout_s
     last = ""
     while time.monotonic() < deadline:
-        stage_now = str(api.get_space_runtime(repo_id).stage)
+        try:
+            stage_now = str(api.get_space_runtime(repo_id).stage)
+        except Exception as e:  # transient Hub API errors: keep waiting
+            print(f"runtime lookup failed ({type(e).__name__}); retrying", flush=True)
+            time.sleep(10)
+            continue
         if stage_now != last:
             print(f"space stage: {stage_now}", flush=True)
             last = stage_now
@@ -141,7 +149,16 @@ def main() -> int:
     ap.add_argument("--wait-timeout", type=int, default=900)
     args = ap.parse_args()
 
-    dirty = git("status", "--porcelain", "--untracked-files=no")
+    # Tracked changes anywhere, plus untracked files under the folders stage()
+    # copies: those would ship under HEAD's commit hash without being in HEAD.
+    dirty = "\n".join(
+        s
+        for s in (
+            git("status", "--porcelain", "--untracked-files=no"),
+            git("status", "--porcelain", "--untracked-files=all", "--", "src", "deploy"),
+        )
+        if s
+    )
     if dirty and not args.stage_only and not args.allow_dirty:
         sys.exit(
             f"working tree has uncommitted changes; commit first or pass --allow-dirty:\n{dirty}"

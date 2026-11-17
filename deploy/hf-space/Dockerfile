@@ -15,7 +15,8 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
     PYTHONPATH=/home/user/app/src \
-    TLDEXTRACT_CACHE=/home/user/.cache/tldextract
+    TLDEXTRACT_CACHE=/home/user/.cache/tldextract \
+    PHISHGUARD_STORE_RAW_URL=0
 WORKDIR /home/user/app
 
 COPY --chown=user requirements.txt ./

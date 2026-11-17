@@ -62,7 +62,10 @@ again. Every deploy commit on the Space names the source commit, and
 - Free Spaces sleep after a period without traffic. The first request after
   that wakes the container, which takes about a minute; `smoke_live.py` waits
   up to 240 s for `/healthz`.
-- Disk is not persistent. The prediction log (`/tmp/phishguard_predictions.jsonl`,
-  credential-like query parameters redacted) is lost on every restart and is
-  not published.
+- Disk is not persistent. The prediction log (`/tmp/phishguard_predictions.jsonl`)
+  is lost on every restart and is not published. The image sets
+  `PHISHGUARD_STORE_RAW_URL=0`, so only the redacted URL is stored (userinfo and
+  credential-like parameters removed), and the file stops growing at 50 MB.
+- Request bodies over 13 MB get 413 before they are read; 422 responses do not
+  echo the rejected input.
 - No Postgres: `DATABASE_URL` is unset, so the logger uses the file fallback.

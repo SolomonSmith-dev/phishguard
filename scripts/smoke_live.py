@@ -20,6 +20,7 @@ Exit code 0 only if every check passes.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import statistics
 import sys
@@ -38,6 +39,7 @@ PHISH_MIN_RECALL = 0.90
 TRANCO_MAX_FLAG_RATE = 0.06  # measured 0.02 on the top 50 (1 of 50), 0.0252 on the top 5,000
 EXPECTED_MODEL_FILE = "url_model_v0_2.onnx"
 USER_AGENT = "phishguard-smoke/1"
+NET_ERRORS: tuple[type[Exception], ...] = (OSError, http.client.HTTPException)
 
 
 @dataclass(frozen=True)
@@ -164,7 +166,7 @@ def wait_healthy(base: str, wait_s: int) -> dict[str, Any] | None:
             if status == 200:
                 return dict(json.loads(raw))
             print(f"healthz HTTP {status}; waiting", file=sys.stderr)
-        except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as e:
+        except (*NET_ERRORS, ValueError) as e:
             print(f"healthz not reachable ({type(e).__name__}); waiting", file=sys.stderr)
         if time.monotonic() >= deadline:
             return None
@@ -176,14 +178,17 @@ def run_live(
 ) -> list[Check]:
     base = base.rstrip("/")
     health = wait_healthy(base, wait_s)
+    # OSError covers URLError, timeouts and dropped connections (RemoteDisconnected
+    # while a Space restarts); HTTPException covers malformed responses. Either one
+    # must fail its check, not crash the run.
     try:
         status, raw = _request(f"{base}/")
         demo_ok = status == 200 and b"PhishGuard" in raw and b'id="score"' in raw
-    except (urllib.error.URLError, TimeoutError):
+    except NET_ERRORS:
         demo_ok = False
     try:
         invalid_status: int | None = _request(f"{base}/predict", {"url": "ab"})[0]
-    except (urllib.error.URLError, TimeoutError):
+    except NET_ERRORS:
         invalid_status = None
 
     scores: dict[str, float | None] = {}
@@ -191,7 +196,7 @@ def run_live(
         try:
             status, raw = _request(f"{base}/predict", {"url": row["url"]})
             scores[row["url"]] = float(json.loads(raw)["p_phish"]) if status == 200 else None
-        except (urllib.error.URLError, TimeoutError, KeyError, ValueError):
+        except (*NET_ERRORS, KeyError, ValueError, TypeError):
             scores[row["url"]] = None
     return evaluate(health, demo_ok, invalid_status, scores, fixtures, expect_commit)
 

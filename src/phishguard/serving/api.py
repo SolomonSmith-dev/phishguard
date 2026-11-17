@@ -35,13 +35,15 @@ from typing import Any
 import joblib
 import numpy as np
 import onnxruntime as ort
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse
 from PIL import Image
 from pydantic import BaseModel, Field
 
 from phishguard.features import URLFeatureExtractor
 from phishguard.models.fusion import FusionInputs, FusionModel
+from phishguard.serving.limits import BodySizeLimit
 from phishguard.serving.prediction_log import PredictionLogger
 from phishguard.serving.url_onnx import UrlOnnxModel
 
@@ -66,6 +68,10 @@ BUILD_MANIFEST = Path("ARTIFACTS.sha256")
 # 2 MB of HTML covers real pages; 10 MB of base64 is a ~7.5 MB PNG.
 MAX_HTML_CHARS = 2_000_000
 MAX_SCREENSHOT_B64_CHARS = 10_000_000
+# Whole-body cap enforced before parsing (see serving/limits.py): room for a URL,
+# ASCII HTML and a screenshot at their field caps plus JSON overhead. HTML that is
+# mostly escaped non-ASCII can hit this cap below 2,000,000 characters.
+MAX_BODY_BYTES = 13 * 1024 * 1024
 
 
 class PredictRequest(BaseModel):  # type: ignore[misc]
@@ -184,6 +190,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="PhishGuard", version="0.1.0", lifespan=lifespan)
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+
+
+@app.exception_handler(RequestValidationError)  # type: ignore[misc]
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # FastAPI's default 422 body echoes the rejected input back, so a 2 MB
+    # field comes back as a 2 MB error. Keep only where and why it failed.
+    errors = [{k: e[k] for k in ("loc", "msg", "type") if k in e} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.get("/healthz")  # type: ignore[misc]
