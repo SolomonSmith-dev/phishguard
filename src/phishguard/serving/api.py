@@ -1,7 +1,8 @@
 """FastAPI service for PhishGuard.
 
 Endpoints:
-    GET  /healthz           Liveness probe.
+    GET  /                  Demo page (static HTML that calls /predict).
+    GET  /healthz           Liveness probe, plus which URL model file is loaded.
     POST /predict           Multi-modal phishing prediction.
 
 Design rules:
@@ -34,12 +35,15 @@ from typing import Any
 import joblib
 import numpy as np
 import onnxruntime as ort
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse
 from PIL import Image
 from pydantic import BaseModel, Field
 
 from phishguard.features import URLFeatureExtractor
 from phishguard.models.fusion import FusionInputs, FusionModel
+from phishguard.serving.limits import BodySizeLimit
 from phishguard.serving.prediction_log import PredictionLogger
 from phishguard.serving.url_onnx import UrlOnnxModel
 
@@ -55,12 +59,29 @@ URL_TLDS_NAME = "url_tld_categories.json"
 HTML_ONNX_NAME = "html_model.onnx"
 IMG_ONNX_NAME = "screenshot_model.onnx"
 FUSION_NAME = "fusion_model.pkl"
+DEMO_PAGE = Path(__file__).with_name("static") / "demo.html"
+# Written by scripts/deploy_hf_space.py into the image; first line is "commit <sha>".
+BUILD_MANIFEST = Path("ARTIFACTS.sha256")
+
+# Upper bounds on the optional payload fields. The service is public, so an
+# unbounded string field lets one request pin memory while pydantic parses it.
+# 2 MB of HTML covers real pages; 10 MB of base64 is a ~7.5 MB PNG.
+MAX_HTML_CHARS = 2_000_000
+MAX_SCREENSHOT_B64_CHARS = 10_000_000
+# Whole-body cap enforced before parsing (see serving/limits.py): room for a URL,
+# ASCII HTML and a screenshot at their field caps plus JSON overhead. HTML that is
+# mostly escaped non-ASCII can hit this cap below 2,000,000 characters.
+MAX_BODY_BYTES = 13 * 1024 * 1024
 
 
 class PredictRequest(BaseModel):  # type: ignore[misc]
     url: str = Field(..., min_length=4, max_length=4096)
-    html: str | None = Field(None, description="Raw HTML text. Optional.")
-    screenshot_b64: str | None = Field(None, description="Base64-encoded PNG. Optional.")
+    html: str | None = Field(
+        None, max_length=MAX_HTML_CHARS, description="Raw HTML text. Optional."
+    )
+    screenshot_b64: str | None = Field(
+        None, max_length=MAX_SCREENSHOT_B64_CHARS, description="Base64-encoded PNG. Optional."
+    )
 
 
 class ModalityProb(BaseModel):  # type: ignore[misc]
@@ -79,6 +100,18 @@ class PredictResponse(BaseModel):  # type: ignore[misc]
 
 # globals populated at startup
 _state: dict[str, Any] = {}
+# what is serving: URL model file name and the deployed source commit
+_meta: dict[str, str | None] = {"url_model": None, "build": None}
+
+
+def _read_build_commit(path: Path) -> str | None:
+    """Return the commit recorded by the deploy script, or None outside a deploy image."""
+    try:
+        first = path.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        return None
+    parts = first.split()
+    return parts[1] if len(parts) == 2 and parts[0] == "commit" else None
 
 
 def _pick_url_artifact(v0_1_name: str) -> Path:
@@ -123,6 +156,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "which exports as its last step) to produce the ONNX URL model."
         )
     logger.info("url model (onnxruntime): %s", url_onnx_path)
+    _meta["url_model"] = url_onnx_path.name
+    _meta["build"] = _read_build_commit(BUILD_MANIFEST)
     _state["url_session"] = UrlOnnxModel.from_paths(url_onnx_path, url_feats_path, url_tlds_path)
     _state["url_calibrator"] = _load_calibrator(url_calib_path)
     _state["url_feature_names"] = _state["url_session"].feature_names
@@ -155,11 +190,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="PhishGuard", version="0.1.0", lifespan=lifespan)
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+
+
+@app.exception_handler(RequestValidationError)  # type: ignore[misc]
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # FastAPI's default 422 body echoes the rejected input back, so a 2 MB
+    # field comes back as a 2 MB error. Keep only where and why it failed.
+    errors = [{k: e[k] for k in ("loc", "msg", "type") if k in e} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.get("/healthz")  # type: ignore[misc]
 def healthz() -> dict[str, Any]:
-    return {"status": "ok", "models_loaded": list(_state.keys())}
+    # url_model names the ONNX file actually loaded, so a deploy check can
+    # tell the v0.2 model from the v0.1 fallback in _pick_url_artifact.
+    # build is the deployed source commit (None outside a deploy image).
+    return {"status": "ok", "models_loaded": list(_state.keys()), **_meta}
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)  # type: ignore[misc]
+def demo_page() -> HTMLResponse:
+    return HTMLResponse(DEMO_PAGE.read_text(encoding="utf-8"))
 
 
 def _predict_url(url: str) -> float:
@@ -217,7 +269,9 @@ def predict(req: PredictRequest) -> PredictResponse:
         )
     except Exception as e:
         logger.exception("url model failed")
-        raise HTTPException(status_code=500, detail=f"url model failure: {e}") from e
+        # Full exception is in the server log; the public response stays generic
+        # so it never carries file paths or internals.
+        raise HTTPException(status_code=500, detail="url model failure") from e
 
     p_html = None
     if req.html:

@@ -45,6 +45,10 @@ dev = [
     "ipykernel>=6.29",
     "jupyterlab>=4.1",
 ]
+# scripts/deploy_hf_space.py (Hugging Face Space upload)
+deploy = [
+    "huggingface_hub>=1.0",
+]
 
 [tool.ruff]
 line-length = 100
@@ -80,3 +84,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"phishguard.serving" = ["static/*.html"]
