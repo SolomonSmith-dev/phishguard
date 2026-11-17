@@ -5,7 +5,10 @@
 fastapi==0.163.1
 uvicorn[standard]==0.54.0
 onnxruntime==1.32.0
-numpy==2.5.5
+# numpy 2.4+ wheels need x86-64-v2 (SSE4.2, POPCNT); the home server is a
+# Core 2 Duo P8600 without them. 2.3.5 is the newest that runs there; the
+# smoke parity check (1e-6 on 75 URLs) confirms scores match the 2.5.5 reference.
+numpy==2.3.5
 pandas==3.1.1
 scikit-learn==1.8.0
 joblib==1.6.0
