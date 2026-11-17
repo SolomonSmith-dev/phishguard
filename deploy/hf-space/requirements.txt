@@ -1,0 +1,15 @@
+# Serve-time dependencies for the Hugging Face Space image. URL model only:
+# no torch, transformers or lightgbm (the booster is served as ONNX).
+# Pinned to the versions the 2026-11-16 ONNX export and parity check ran on.
+# scikit-learn must stay at 1.8.0: url_calibrator_v0_2.pkl was pickled with it.
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+onnxruntime==1.32.0
+numpy==2.5.5
+pandas==3.1.1
+scikit-learn==1.8.0
+joblib==1.6.0
+tldextract==5.4.0
+pydantic==2.14.3
+pillow==13.0.0
+psycopg[binary]==3.3.9

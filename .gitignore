@@ -42,6 +42,7 @@ wandb/
 secrets/
 
 # docker
+build/
 *.log
 reports/drift.html
 reports/drift.json

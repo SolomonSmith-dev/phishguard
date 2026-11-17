@@ -30,6 +30,25 @@ def test_healthz(client):
     body = r.json()
     assert body["status"] == "ok"
     assert "url_session" in body["models_loaded"]
+    assert body["url_model"].startswith("url_model")
+
+
+def test_demo_page(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert 'id="score"' in r.text
+    # The page posts to a relative path so it works under any host.
+    assert 'fetch("predict"' in r.text
+
+
+def test_predict_rejects_oversized_html(client):
+    from phishguard.serving.api import MAX_HTML_CHARS
+
+    r = client.post(
+        "/predict", json={"url": "https://google.com", "html": "a" * (MAX_HTML_CHARS + 1)}
+    )
+    assert r.status_code == 422
 
 
 def test_predict_benign_tranco(client):

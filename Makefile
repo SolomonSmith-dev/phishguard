@@ -1,4 +1,4 @@
-.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 export-url-onnx train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python
+.PHONY: setup data clean scrape build-multimodal train-url train-url-v0_2 export-url-onnx train-html train-img train-fusion train-all serve eval eval-v0_1 eval-v0_2 drift test lint format docker docker-up docker-down check-python deploy-hf deploy-hf-stage docker-hf smoke-live smoke-fixtures
 
 PYTHON := $(shell command -v python3.11 2>/dev/null || command -v python3.12 2>/dev/null || command -v python3.13 2>/dev/null || command -v python3 2>/dev/null)
 VENV := .venv
@@ -90,6 +90,31 @@ docker-up:
 
 docker-down:
 	docker compose -f docker/docker-compose.yml down
+
+# ---- Public deploy: Hugging Face Docker Space (free CPU basic). See docs/deploy.md.
+HF_SPACE ?= SolomonSmith-dev/phishguard
+LIVE_URL ?= https://solomonsmith-dev-phishguard.hf.space
+
+# Write the Space build context to build/hf-space without uploading.
+deploy-hf-stage:
+	$(ACTIVATE) && python scripts/deploy_hf_space.py --repo-id $(HF_SPACE) --stage-only
+
+# Stage, upload in one commit, and wait until the Space reports RUNNING.
+deploy-hf:
+	$(ACTIVATE) && python scripts/deploy_hf_space.py --repo-id $(HF_SPACE) --wait
+
+# Build and run the exact Space image locally on :7860.
+docker-hf: deploy-hf-stage
+	docker build -t phishguard-space:local build/hf-space
+	docker run --rm -p 7860:7860 phishguard-space:local
+
+# Live checks: health and model file, demo page, 422, parity, phish recall, Tranco flag rate.
+smoke-live:
+	$(ACTIVATE) && python scripts/smoke_live.py --base-url $(LIVE_URL)
+
+# Re-score scripts/smoke_fixtures.json with the local artifacts (after a retrain or re-export).
+smoke-fixtures:
+	$(ACTIVATE) && python scripts/smoke_live.py --regen
 
 clean:
 	rm -rf $(VENV) build dist *.egg-info .pytest_cache .mypy_cache .ruff_cache
