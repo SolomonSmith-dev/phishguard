@@ -16,13 +16,24 @@ if [[ ${#files[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# uses: org/action@<exactly 40 hex> then space, comment, or end of line.
-# A SHA prefix plus suffix (@<40-hex>-v4) must fail.
-ok_re='uses: [-A-Za-z0-9_./]+@[0-9a-f]{40}([[:space:]]|#|$)'
-unpinned="$(grep -E 'uses:' "${files[@]}" | grep -vE "$ok_re" || true)"
+# Match the uses: value, not a SHA mentioned in a comment.
+unpinned=""
+while IFS= read -r raw; do
+  trimmed="${raw#"${raw%%[![:space:]]*}"}"
+  [[ "$trimmed" == \#* ]] && continue
+  line="${raw%%#*}"
+  [[ "$line" == *uses:* ]] || continue
+  rest="${line#*uses:}"
+  rest="${rest#"${rest%%[![:space:]]*}"}"
+  action="${rest%%[[:space:]]*}"
+  ref="${action##*@}"
+  if [[ "$action" != *@* || ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+    unpinned+="$raw"$'\n'
+  fi
+done < <(grep -E 'uses:' "${files[@]}" || true)
 if [[ -n "$unpinned" ]]; then
   echo "unpinned actions:"
-  printf '%s\n' "$unpinned"
+  printf '%s' "$unpinned"
   exit 1
 fi
 
@@ -34,8 +45,25 @@ if [[ ${#ci_files[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Require a real run: step. A comment that names the script must not pass.
-if ! grep -Eq '^[[:space:]]+run:[[:space:]]+bash[[:space:]]+scripts/test-workflow-pins\.sh[[:space:]]*$' "${ci_files[@]}"; then
+# Require a pins step, not a comment or a string inside a block scalar.
+invoke_ok=0
+for f in "${ci_files[@]}"; do
+  if awk '
+    {
+      sub(/#.*/, "")
+      if ($0 ~ /^[[:space:]]+- name: Test workflow pins[[:space:]]*$/) { expect=1; next }
+      if (expect) {
+        if ($0 ~ /^[[:space:]]*$/) next
+        if ($0 ~ /^[[:space:]]+run:[[:space:]]+bash[[:space:]]+scripts\/test-workflow-pins\.sh[[:space:]]*$/) { found=1; exit }
+        expect=0
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$f"; then
+    invoke_ok=1
+  fi
+done
+if [[ "$invoke_ok" -ne 1 ]]; then
   echo "ci.yml does not invoke test-workflow-pins.sh"
   exit 1
 fi
