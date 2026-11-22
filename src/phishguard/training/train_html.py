@@ -2,15 +2,22 @@
 
 Strategy:
     1. Strip <script>, <style>, comments. Keep visible text + a flattened token of tag names.
-    2. Tokenize with DistilBERT tokenizer at max_length=512. Truncation tail-biased
-       because phishing pages often hide credential forms below the fold.
-    3. Standard HuggingFace Trainer; fp16 if CUDA available.
-    4. Export final model to ONNX for serving parity.
+    2. Tokenize with DistilBERT tokenizer at max_length=512. Truncation is the tokenizer
+       default: it keeps the HEAD of the sequence (tag-name sequence first) and drops the tail.
+    3. Standard HuggingFace Trainer; fp16 if CUDA available. The device is chosen by Trainer
+       (CUDA, else MPS, else CPU).
+    4. Export final model to ONNX for serving parity (skipped when artifacts.onnx_path is null).
+    5. Logging goes to wandb only if logging.report_to is "wandb". Default is off. A JSONL
+       file log and a resident-memory guard (training.max_rss_gb) are available for the Mac.
 """
 
 from __future__ import annotations
 
 import argparse
+import inspect
+import json
+import resource
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -31,8 +38,59 @@ from transformers import (
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
 )
+
+
+class MemoryLimitExceededError(RuntimeError):
+    """Peak resident memory of this process passed the configured limit."""
+
+
+def peak_rss_gb() -> float:
+    """Peak resident set size of this process in GB (ru_maxrss is bytes on macOS, KB on Linux)."""
+    raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return raw / 1024**3 if sys.platform == "darwin" else raw / 1024**2
+
+
+def check_rss(limit_gb: float) -> float:
+    rss = peak_rss_gb()
+    if rss > limit_gb:
+        raise MemoryLimitExceededError(f"peak RSS {rss:.2f} GB passed limit {limit_gb} GB")
+    return rss
+
+
+def warmup_kwargs(ratio: float) -> dict[str, float]:
+    """transformers 5 dropped warmup_ratio (warmup_steps takes a float ratio); 4.x still has it."""
+    if "warmup_ratio" in inspect.signature(TrainingArguments.__init__).parameters:
+        return {"warmup_ratio": ratio}
+    return {"warmup_steps": ratio}
+
+
+def build_report_to(cfg: dict[str, Any]) -> list[str]:
+    """wandb is opt-in: only when logging.report_to is explicitly "wandb"."""
+    value = (cfg.get("logging") or {}).get("report_to", "none")
+    return ["wandb"] if value == "wandb" else []
+
+
+class LocalLogCallback(TrainerCallback):  # type: ignore[misc]
+    """Append Trainer logs to a local JSONL file and enforce the memory limit each step."""
+
+    def __init__(self, log_file: Path | None, max_rss_gb: float | None) -> None:
+        self.log_file = log_file
+        self.max_rss_gb = max_rss_gb
+        if log_file:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def on_log(self, args: Any, state: Any, control: Any, logs: Any = None, **kw: Any) -> None:
+        if self.log_file and logs:
+            row = {"step": state.global_step, "peak_rss_gb": round(peak_rss_gb(), 3), **logs}
+            with self.log_file.open("a") as fh:
+                fh.write(json.dumps(row) + "\n")
+
+    def on_step_end(self, args: Any, state: Any, control: Any, **kw: Any) -> None:
+        if self.max_rss_gb:
+            check_rss(self.max_rss_gb)
 
 
 def clean_html(html: str) -> str:
@@ -96,24 +154,27 @@ def train(cfg: dict[str, Any]) -> None:
         gradient_accumulation_steps=cfg["training"]["grad_accum_steps"],
         learning_rate=cfg["training"]["learning_rate"],
         weight_decay=cfg["training"]["weight_decay"],
-        warmup_ratio=cfg["training"]["warmup_ratio"],
+        **warmup_kwargs(cfg["training"]["warmup_ratio"]),
         fp16=cfg["training"]["fp16"] and torch.cuda.is_available(),
         eval_strategy=cfg["training"]["eval_strategy"],
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
-        report_to=["wandb"],
-        logging_steps=50,
+        report_to=build_report_to(cfg),
+        logging_steps=cfg["training"].get("logging_steps", 50),
     )
+    log_file = (cfg.get("logging") or {}).get("log_file")
+    max_rss = cfg["training"].get("max_rss_gb")
 
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        tokenizer=tok,
+        processing_class=tok,
         data_collator=DataCollatorWithPadding(tok),
         compute_metrics=metrics_fn,
+        callbacks=[LocalLogCallback(Path(log_file) if log_file else None, max_rss)],
     )
 
     trainer.train()
@@ -124,6 +185,9 @@ def train(cfg: dict[str, Any]) -> None:
     tok.save_pretrained(out_dir)
 
     # ONNX export
+    if not cfg["artifacts"].get("onnx_path"):
+        print(f"peak RSS {peak_rss_gb():.2f} GB (smoke run, not a result)")
+        return
     onnx_path = Path(cfg["artifacts"]["onnx_path"])
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
     dummy = tok(
