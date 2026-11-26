@@ -43,7 +43,7 @@ with Tranco-as-benign. See `LIMITATIONS.md`.
 
 ### v0.1 (`url_model.lgb`)
 
-* 47 numeric URL-string features + 1 categorical (TLD), URL canonicalization
+* 46 numeric URL-string features + 1 categorical (TLD) extracted; v0.2 drops 5 of them (`has_https`, `has_http`, `url_length`, `host_length`, `path_length`) and trains on 41 numeric + TLD (`url_features_v0_2.json`), URL canonicalization
   applied at both train and serve time.
 * Training: 5-fold stratified CV on PhiUSIIL train, 100-round early stop on val,
   isotonic calibration on val.

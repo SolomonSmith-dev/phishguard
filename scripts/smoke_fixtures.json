@@ -1,0 +1,309 @@
+{
+ "about": "Expected scores from the verified local artifacts. phish: held-out PhiUSIIL test-split phish, sample(25, random_state=7). tranco: top 50 of the Tranco probe, never trained on. Regenerate with `python scripts/smoke_live.py --regen` after retraining or re-exporting.",
+ "model_file": "url_model_v0_2.onnx",
+ "threshold": 0.5,
+ "phish": [
+  {
+   "url": "https://0800panel34transaccional24persona763.2646445.repl.co/",
+   "expected": 1.0
+  },
+  {
+   "url": "https://sitebuilder184272.dynadot.com/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.cortopepperfest.com",
+   "expected": 0.9885714285714285
+  },
+  {
+   "url": "http://www.ineslebuhan.com",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.nesk.zzz.com.ua",
+   "expected": 0.9984051036682615
+  },
+  {
+   "url": "http://www.eo3.de",
+   "expected": 0.9984051036682615
+  },
+  {
+   "url": "http://ca.4thnutrition.com/gestion.postal/c0ece/",
+   "expected": 1.0
+  },
+  {
+   "url": "https://virtual.bancodebogota0.repl.co/",
+   "expected": 1.0
+  },
+  {
+   "url": "https://bloqueobcr.suspendidousuario.repl.co/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.iclothes.gr/e-doc.html",
+   "expected": 1.0
+  },
+  {
+   "url": "https://deja324--veri345.repl.co",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.sepung.co.kr",
+   "expected": 0.9481132075471698
+  },
+  {
+   "url": "https://fancy-bread-b28c.kpedhgrt.workers.dev/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://u1992140.cp.regruhosting.ru/",
+   "expected": 1.0
+  },
+  {
+   "url": "https://docs.google.com/forms/d/e/1faipqlsf82_j_opz26-_l8tiexnrpdighypx1z7o5x4p3coczr0gf9a/viewform?usp=send_form",
+   "expected": 1.0
+  },
+  {
+   "url": "http://long-breeze-f1b7.ouath-confirmation.workers.dev/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://srv188097.hoster-test.ru/wp-includes/index/6a6944a31e62216032ad466f0f798a1b/login",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.fazpandemidestekyardimi.unaux.com",
+   "expected": 0.9984051036682615
+  },
+  {
+   "url": "https://fglitc00001.firebaseapp.com/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.chengxinliansuo.com",
+   "expected": 1.0
+  },
+  {
+   "url": "http://mkikisyayt.duckdns.org",
+   "expected": 1.0
+  },
+  {
+   "url": "https://australiapostm.com/fad/",
+   "expected": 1.0
+  },
+  {
+   "url": "http://www.hruh.fbcode.co",
+   "expected": 1.0
+  },
+  {
+   "url": "https://cf-ipfs.com/ipfs/qmyt9u1hyklgouxvjwqiexxerevvlbqqfwrknr9babxubu",
+   "expected": 1.0
+  },
+  {
+   "url": "http://cajatacna.com/",
+   "expected": 1.0
+  }
+ ],
+ "tranco": [
+  {
+   "url": "https://google.com",
+   "expected": 0.45161290322580644
+  },
+  {
+   "url": "https://gtld-servers.net",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://gstatic.com",
+   "expected": 0.023894862604540025
+  },
+  {
+   "url": "https://facebook.com",
+   "expected": 0.023894862604540025
+  },
+  {
+   "url": "https://cloudflare.com",
+   "expected": 0.012371134020618556
+  },
+  {
+   "url": "https://microsoft.com",
+   "expected": 0.037037037037037035
+  },
+  {
+   "url": "https://googleapis.com",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://mail.ru",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://youtube.com",
+   "expected": 0.012371134020618556
+  },
+  {
+   "url": "https://apple.com",
+   "expected": 0.23
+  },
+  {
+   "url": "https://amazonaws.com",
+   "expected": 0.04526748971193416
+  },
+  {
+   "url": "https://akamai.net",
+   "expected": 0.00963855421686747
+  },
+  {
+   "url": "https://instagram.com",
+   "expected": 0.017241379310344827
+  },
+  {
+   "url": "https://dzen.ru",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://fbcdn.net",
+   "expected": 0.012549019607843135
+  },
+  {
+   "url": "https://twitter.com",
+   "expected": 0.023894862604540025
+  },
+  {
+   "url": "https://linkedin.com",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://googletagmanager.com",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://office.com",
+   "expected": 0.012549019607843135
+  },
+  {
+   "url": "https://googlevideo.com",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://live.com",
+   "expected": 0.0
+  },
+  {
+   "url": "https://akamaiedge.net",
+   "expected": 0.012371134020618556
+  },
+  {
+   "url": "https://akadns.net",
+   "expected": 0.00963855421686747
+  },
+  {
+   "url": "https://amazon.com",
+   "expected": 0.45161290322580644
+  },
+  {
+   "url": "https://keenetic.io",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://azure.com",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://googleusercontent.com",
+   "expected": 0.023894862604540025
+  },
+  {
+   "url": "https://wikipedia.org",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://github.com",
+   "expected": 0.015384615384615385
+  },
+  {
+   "url": "https://ezviz7.com",
+   "expected": 0.017241379310344827
+  },
+  {
+   "url": "https://domaincontrol.com",
+   "expected": 0.00963855421686747
+  },
+  {
+   "url": "https://doubleclick.net",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://microsoftonline.com",
+   "expected": 0.09120521172638435
+  },
+  {
+   "url": "https://bing.com",
+   "expected": 0.0
+  },
+  {
+   "url": "https://fastly.net",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://chatgpt.com",
+   "expected": 0.23
+  },
+  {
+   "url": "https://digicert.com",
+   "expected": 0.015384615384615385
+  },
+  {
+   "url": "https://netflix.com",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://whatsapp.net",
+   "expected": 0.023894862604540025
+  },
+  {
+   "url": "https://appsflyersdk.com",
+   "expected": 0.00963855421686747
+  },
+  {
+   "url": "https://office.net",
+   "expected": 0.003755163349605708
+  },
+  {
+   "url": "https://apple-dns.net",
+   "expected": 0.6506024096385542
+  },
+  {
+   "url": "https://wordpress.org",
+   "expected": 0.012549019607843135
+  },
+  {
+   "url": "https://trafficmanager.net",
+   "expected": 0.012371134020618556
+  },
+  {
+   "url": "https://workers.dev",
+   "expected": 0.034358047016274866
+  },
+  {
+   "url": "https://skype.com",
+   "expected": 0.012549019607843135
+  },
+  {
+   "url": "https://aaplimg.com",
+   "expected": 0.015384615384615385
+  },
+  {
+   "url": "https://youtu.be",
+   "expected": 0.0
+  },
+  {
+   "url": "https://sharepoint.com",
+   "expected": 0.012371134020618556
+  },
+  {
+   "url": "https://pinterest.com",
+   "expected": 0.00963855421686747
+  }
+ ]
+}

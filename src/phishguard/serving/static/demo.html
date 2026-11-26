@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhishGuard: score a URL</title>
+<meta name="description" content="A URL-only phishing classifier. Paste a link and get a calibrated probability, with the evidence behind the number.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Jaro:opsz@6..72&display=swap" rel="stylesheet">
+<style>
+/* A3sthetic family project. Display face: Jaro (Agyei Archer, with Hurka and Velimirovic).
+   Accent: Ndebele blue, the single UI accent. Kola red is used only for the
+   "flagged as phishing" state, always with the word. */
+:root {
+  --font-display: "Jaro", Georgia, serif;
+  --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --text-xs: .8125rem; --text-sm: .875rem; --text-base: 1.0625rem; --text-lg: 1.25rem;
+  --text-xl: 1.625rem; --text-2xl: clamp(1.875rem, 3.2vw, 2.25rem); --text-3xl: clamp(2.25rem, 5vw, 3.25rem);
+  --space-1: .5rem; --space-2: 1rem; --space-3: 1.5rem; --space-4: 2rem; --space-6: 3rem; --space-8: 4rem;
+  --container: 68rem; --measure: 40rem; --radius: 10px; --ease: cubic-bezier(.2,.6,.2,1);
+  --bg: #F7F6F2; --surface: #FFFFFF; --surface-2: #EFEDE6;
+  --text: #161614; --text-2: #55554F; --text-3: #6E6D66;
+  --border: #E2DFD6; --border-strong: #CBC7BB;
+  --accent: #1F5FA8; --accent-hover: #184C87; --accent-soft: #E4ECF6; --on-accent: #FFFFFF;
+  --alarm: #A3321F;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111210; --surface: #181A17; --surface-2: #20221F;
+    --text: #ECEBE5; --text-2: #B0AFA7; --text-3: #93928A;
+    --border: #2B2D29; --border-strong: #3B3E39;
+    --accent: #7FB0EA; --accent-hover: #A3C7F0; --accent-soft: #1B2633; --on-accent: #0D1622;
+    --alarm: #E88A73;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111210; --surface: #181A17; --surface-2: #20221F;
+  --text: #ECEBE5; --text-2: #B0AFA7; --text-3: #93928A;
+  --border: #2B2D29; --border-strong: #3B3E39;
+  --accent: #7FB0EA; --accent-hover: #A3C7F0; --accent-soft: #1B2633; --on-accent: #0D1622;
+  --alarm: #E88A73;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 var(--text-base)/1.55 var(--font-body);
+}
+a { color: var(--accent); text-underline-offset: .18em; }
+a:hover { color: var(--accent-hover); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.mono, code, .num { font-family: var(--font-mono); }
+.num { font-variant-numeric: tabular-nums; }
+code { font-size: .92em; }
+
+.wrap { max-width: var(--container); margin: 0 auto; padding: var(--space-4) var(--space-3) var(--space-8); }
+
+/* Masthead */
+header.mast { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.wordmark { font-family: var(--font-display); font-weight: 400; font-size: var(--text-3xl); line-height: 1; letter-spacing: .005em; margin: 0; }
+.mast-meta { display: flex; gap: var(--space-2); align-items: baseline; color: var(--text-3); font-size: var(--text-xs); }
+.theme-toggle {
+  font: 500 var(--text-xs) var(--font-mono); color: var(--text-2); background: none;
+  border: 1px solid var(--border-strong); border-radius: 6px; padding: .45rem .7rem; min-height: 44px; cursor: pointer;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--text-3); }
+.lede { max-width: var(--measure); color: var(--text-2); margin: var(--space-2) 0 0; font-size: var(--text-lg); line-height: 1.45; }
+
+/* Bogolan (Malian mudcloth) source tradition: small repeated hand-made marks.
+   Section rules are uneven dot-and-dash runs, like a hand-painted border line,
+   kept at hairline contrast so they separate without decorating. */
+.rule {
+  height: 3px; border: 0; margin: var(--space-6) 0;
+  color: var(--border-strong);
+  background-image:
+    radial-gradient(circle, currentColor 1.1px, transparent 1.4px),
+    linear-gradient(90deg, currentColor 0 7px, transparent 7px);
+  background-size: 9px 3px, 23px 1px;
+  background-position: 0 0, 4px 1px;
+  background-repeat: repeat-x;
+}
+
+/* Scoring form */
+form.score { margin-top: var(--space-4); }
+form.score label { display: block; font-size: var(--text-sm); font-weight: 600; margin-bottom: var(--space-1); }
+.field { display: flex; gap: var(--space-1); }
+.field input {
+  flex: 1; min-width: 0; min-height: 52px; padding: .7rem .9rem;
+  font: 400 var(--text-base) var(--font-mono); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius);
+}
+.field input::placeholder { color: var(--text-3); }
+.field input:focus-visible { outline-offset: 0; border-color: var(--accent); }
+.btn {
+  min-height: 52px; padding: 0 1.4rem; border: 0; border-radius: 999px; cursor: pointer;
+  font: 600 var(--text-base) var(--font-body); color: var(--on-accent); background: var(--accent);
+  transition: background-color 160ms var(--ease);
+}
+.btn:hover { background: var(--accent-hover); }
+.btn[disabled] { opacity: .6; cursor: progress; }
+.hint { color: var(--text-3); font-size: var(--text-sm); margin: var(--space-1) 0 0; }
+.examples { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-3); margin-top: var(--space-2); font-size: var(--text-sm); color: var(--text-2); }
+.examples span { color: var(--text-3); }
+.ex {
+  background: none; border: 0; padding: .6rem 0; min-height: 44px; cursor: pointer;
+  font: 400 var(--text-sm) var(--font-body); color: var(--accent);
+  text-decoration: underline; text-underline-offset: .18em; text-decoration-color: var(--border-strong);
+}
+.ex:hover { color: var(--accent-hover); text-decoration-color: currentColor; }
+
+/* Result. Gee's Bend "housetop" source tradition: the result is framed by
+   nested rectangles with deliberately uneven offsets (wider at the left and
+   bottom), the way a housetop block steps its strips unevenly toward the center. */
+.housetop {
+  margin-top: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 6px 4px 10px 12px; background: var(--surface-2);
+}
+.housetop-inner {
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  padding: var(--space-3) var(--space-3) var(--space-3);
+}
+.result-empty { color: var(--text-3); margin: 0; }
+.readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); }
+.p-label { display: block; font: 500 var(--text-xs) var(--font-mono); color: var(--text-3); letter-spacing: .02em; }
+.p-value { font: 500 clamp(2.5rem, 7vw, 3.5rem)/1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.verdict { font-size: var(--text-lg); font-weight: 600; }
+.verdict.flagged { color: var(--alarm); }
+.verdict-sub { display: block; font-size: var(--text-sm); font-weight: 400; color: var(--text-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); margin: var(--space-2) 0 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--text-3); }
+.facts b { font-weight: 500; color: var(--text-2); }
+.scored-url { margin: var(--space-2) 0 0; font: 400 var(--text-sm) var(--font-mono); color: var(--text-2); overflow-wrap: anywhere; }
+.err { color: var(--alarm); margin: 0; }
+
+/* Scale: where this score sits against the measured reference points */
+.scale { position: relative; margin: var(--space-4) 0 var(--space-2); height: 74px; }
+.scale .track { position: absolute; left: 0; right: 0; top: 32px; height: 1px; background: var(--border-strong); }
+.scale .tick { position: absolute; top: 27px; width: 1px; height: 11px; background: var(--border-strong); }
+.scale .tick-lab { position: absolute; top: 44px; font: 400 var(--text-xs) var(--font-mono); color: var(--text-3); transform: translateX(-50%); white-space: nowrap; }
+.scale .ref { position: absolute; top: 24px; width: 2px; height: 17px; background: var(--text-3); }
+.scale .ref-lab { position: absolute; top: 58px; font: 400 var(--text-xs) var(--font-body); color: var(--text-2); white-space: nowrap; }
+.scale .me { position: absolute; top: 18px; width: 4px; height: 29px; border-radius: 2px; background: var(--text); transform: translateX(-2px); transition: left 200ms var(--ease); }
+.scale .me-lab { position: absolute; top: 0; font: 500 var(--text-xs) var(--font-mono); color: var(--text); white-space: nowrap; }
+
+/* Evidence. Gee's Bend source tradition again, as an improvised block grid:
+   an asymmetric split (reading column wider than the evidence column, uneven gutter)
+   instead of a centered single column or equal halves. */
+.evidence { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: var(--space-4) var(--space-6); align-items: start; }
+.evidence h2 { font: 600 var(--text-lg)/1.3 var(--font-body); margin: 0 0 var(--space-1); }
+.evidence section + section { margin-top: var(--space-4); }
+.evidence p, .evidence li { max-width: var(--measure); color: var(--text-2); }
+.evidence p { margin: 0 0 var(--space-2); }
+.evidence ol { margin: 0; padding-left: 1.25rem; }
+.evidence li { margin-bottom: var(--space-1); }
+.evidence li strong, .evidence p strong { color: var(--text); font-weight: 600; }
+aside.numbers { border-left: 1px solid var(--border); padding-left: var(--space-3); }
+aside.numbers h3 { font: 600 var(--text-sm)/1.35 var(--font-body); margin: 0 0 .35rem; }
+aside.numbers .src { font-size: var(--text-xs); color: var(--text-3); margin: 0 0 var(--space-1); }
+aside.numbers table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); margin-bottom: var(--space-3); }
+aside.numbers td { padding: .3rem 0; border-bottom: 1px solid var(--border); vertical-align: baseline; }
+aside.numbers td:last-child { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+aside.numbers td:first-child { color: var(--text-2); padding-right: var(--space-1); }
+
+footer { margin-top: var(--space-6); font-size: var(--text-sm); color: var(--text-3); }
+footer p { margin: 0 0 var(--space-1); max-width: var(--measure); }
+footer pre {
+  margin: var(--space-2) 0; padding: var(--space-2); overflow-x: auto;
+  font: 400 var(--text-xs)/1.6 var(--font-mono); color: var(--text-2);
+  background: var(--surface-2); border-radius: 6px;
+}
+
+@media (max-width: 760px) {
+  .wrap { padding: var(--space-3) 16px var(--space-6); }
+  .evidence { grid-template-columns: minmax(0, 1fr); }
+  aside.numbers { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: var(--space-3); }
+  .field { flex-direction: column; }
+  .btn { width: 100%; }
+  .rule { margin: var(--space-4) 0; }
+  .mast-meta .mono { display: none; }
+  .examples span { flex-basis: 100%; }
+  /* Narrow track: the threshold label drops to its own row so it cannot
+     collide with the top-site median label near 0. */
+  .scale { height: 92px; }
+  .scale .ref-lab.thr { top: 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <h1 class="wordmark">PhishGuard</h1>
+    <div class="mast-meta">
+      <span class="mono">URL model v0.2</span>
+      <button class="theme-toggle" id="theme" type="button" aria-label="Switch color theme">dark</button>
+    </div>
+  </header>
+  <p class="lede">Paste a link and get a calibrated probability that it is phishing. The model reads the URL string only. It never visits the page.</p>
+
+  <form class="score" id="score" novalidate>
+    <label for="url">URL to score</label>
+    <div class="field">
+      <input id="url" name="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+             minlength="4" maxlength="4096" required placeholder="http://accounts-verify.secure-login.xyz/login.php">
+      <button class="btn" id="go" type="submit">Score URL</button>
+    </div>
+    <p class="hint">Nothing is fetched or opened. Scoring takes a few milliseconds once the service is awake.</p>
+    <div class="examples" aria-label="Example URLs">
+      <span>Try:</span>
+      <button class="ex" type="button" data-url="http://accounts-verify.secure-login.xyz/login.php">a phishing-shaped link</button>
+      <button class="ex" type="button" data-url="https://australiapostm.com/fad/" title="From the PhiUSIIL test split; its domain never appears in the training or validation data">a held-out phish</button>
+      <button class="ex" type="button" data-url="https://github.com">a top site</button>
+      <button class="ex" type="button" data-url="https://apple-dns.net">a top-50 site it gets wrong</button>
+    </div>
+  </form>
+
+  <div class="housetop">
+    <div class="housetop-inner" id="result" aria-live="polite">
+      <p class="result-empty" id="empty">The score, the verdict at the served threshold, and where the score sits against the measured reference points appear here.</p>
+    </div>
+  </div>
+
+  <hr class="rule" aria-hidden="true">
+
+  <div class="evidence">
+    <div>
+      <section>
+        <h2>What the number is</h2>
+        <p>A LightGBM model over 41 numeric features of the URL string plus its TLD, exported to ONNX and run in ONNX Runtime, with an isotonic calibrator on top, fit on the validation split so scores track observed phishing rates. The calibrated Brier score on the test split is 0.0157; per-bin reliability has not been plotted yet.</p>
+        <p>It sees the URL and nothing else. A clean-looking URL on a compromised site scores clean, and a legitimate site with an odd hostname can score high.</p>
+      </section>
+      <section>
+        <h2>Why the first model could not be trusted</h2>
+        <p>The public dataset (PhiUSIIL, about 235,000 URLs) gives a URL model an AUC above 0.99 almost for free. Three shortcuts made that number worthless, each caught by hand-written smoke tests:</p>
+        <ol>
+          <li><strong>The labels were upside down.</strong> Raw <code>label=1</code> means legitimate. Obvious phishing URLs scored 0.0 until the polarity was fixed and locked by a test.</li>
+          <li><strong>Every legitimate URL started with <code>https://www.</code> and none had a path.</strong> The model learned "has www". URLs are now canonicalized the same way at training and serving time.</li>
+          <li><strong><code>has_https</code> carried 47.6% of the model's gain</strong> before those fixes and 34.9% after. This model drops it and the length features. The top feature is now <code>subdomain_depth</code> at 27.2% of gain, and a test fails the build if any single feature passes 50%.</li>
+        </ol>
+      </section>
+      <section>
+        <h2>Limits</h2>
+        <p>URL only. The HTML and screenshot models are scaffolded but not trained, because there is no labeled multimodal corpus yet. The served threshold is 0.50; the headline false-positive rate in the README is quoted at 0.70.</p>
+        <p>Each request is logged inside this container for drift monitoring, but only the scheme and host of the URL are stored (for example <code>https://example.com</code>). The path, query string, fragment and any <code>user:password@</code> part are dropped before anything is written. The log is not published and is wiped when the container restarts.</p>
+      </section>
+    </div>
+
+    <aside class="numbers" aria-label="Measured results">
+      <h3>Held-out test split</h3>
+      <p class="src">n = 23,537, through the served ONNX path</p>
+      <table>
+        <tr><td>ROC AUC</td><td>0.9942</td></tr>
+        <tr><td>Average precision</td><td>0.9941</td></tr>
+        <tr><td>F1</td><td>0.9782</td></tr>
+        <tr><td>Brier, calibrated</td><td>0.0157</td></tr>
+      </table>
+      <h3>Tranco top 5,000 sites</h3>
+      <p class="src">legitimate only, never trained on</p>
+      <table>
+        <tr><td>Flagged at 0.50</td><td>2.52%</td></tr>
+        <tr><td>Flagged at 0.70</td><td>1.54%</td></tr>
+        <tr><td>Flagged at 0.90</td><td>0.90%</td></tr>
+        <tr><td>Median score</td><td>0.013</td></tr>
+      </table>
+      <h3>ONNX against the native model</h3>
+      <p class="src">28,537 URLs</p>
+      <table>
+        <tr><td>Max absolute difference</td><td>8.9e-8</td></tr>
+        <tr><td>Rows above 1e-5</td><td>0</td></tr>
+      </table>
+      <p class="src">Source: <a href="https://github.com/SolomonSmith-dev/phishguard/tree/main/reports">reports/</a> in the repository, regenerated by <code>make export-url-onnx</code>.</p>
+    </aside>
+  </div>
+
+  <hr class="rule" aria-hidden="true">
+
+  <footer>
+    <p>Code, model card and the full write-up of the leakage findings: <a href="https://github.com/SolomonSmith-dev/phishguard">github.com/SolomonSmith-dev/phishguard</a>.</p>
+    <p>Call the API directly:</p>
+    <pre id="curl">curl -s -X POST <span id="origin">https://phishguard.soloserver.xyz</span>/predict \
+  -H 'content-type: application/json' \
+  -d '{"url":"http://accounts-verify.secure-login.xyz/login.php"}'</pre>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TRANCO_MEDIAN = 0.0125; // reports/url_onnx_2026-11-16.md, served path
+  var FLAG_RATE = { "0.5": "2.52%", "0.7": "1.54%", "0.9": "0.90%" };
+
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("theme");
+  function currentTheme() {
+    var set = root.getAttribute("data-theme");
+    if (set) return set;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function syncThemeLabel() {
+    var next = currentTheme() === "dark" ? "light" : "dark";
+    themeBtn.textContent = next;
+    themeBtn.setAttribute("aria-label", "Switch to " + next + " theme");
+  }
+  themeBtn.addEventListener("click", function () {
+    root.setAttribute("data-theme", currentTheme() === "dark" ? "light" : "dark");
+    syncThemeLabel();
+  });
+  syncThemeLabel();
+
+  var origin = document.getElementById("origin");
+  if (location.protocol.indexOf("http") === 0) origin.textContent = location.origin;
+
+  var form = document.getElementById("score");
+  var input = document.getElementById("url");
+  var go = document.getElementById("go");
+  var out = document.getElementById("result");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function pct(x) { return (Math.max(0, Math.min(1, x)) * 100).toFixed(2) + "%"; }
+
+  function place(node, x, edge) {
+    // Keep labels inside the scale at the ends instead of overflowing.
+    node.style.left = pct(x);
+    if (edge) {
+      if (x > 0.85) { node.style.transform = "translateX(-100%)"; }
+      else if (x > 0.15) { node.style.transform = "translateX(-50%)"; }
+    }
+  }
+
+  function renderScale(p, threshold) {
+    var s = el("div", "scale");
+    s.setAttribute("role", "img");
+    s.setAttribute("aria-label", "Score " + p.toFixed(3) + " on a 0 to 1 scale. Threshold " +
+      threshold.toFixed(2) + ". Median score of top legitimate sites " + TRANCO_MEDIAN.toFixed(3) + ".");
+    s.appendChild(el("div", "track"));
+    [0, 0.5, 1].forEach(function (t) {
+      var tick = el("div", "tick"); tick.style.left = pct(t); s.appendChild(tick);
+      var lab = el("div", "tick-lab", t === 0.5 ? "" : String(t));
+      lab.style.left = pct(t);
+      if (t === 0) lab.style.transform = "none";
+      if (t === 1) lab.style.transform = "translateX(-100%)";
+      s.appendChild(lab);
+    });
+    var thr = el("div", "ref"); thr.style.left = pct(threshold); s.appendChild(thr);
+    var thrLab = el("div", "ref-lab thr", "threshold " + threshold.toFixed(2));
+    place(thrLab, threshold, true); s.appendChild(thrLab);
+    var med = el("div", "ref"); med.style.left = pct(TRANCO_MEDIAN); s.appendChild(med);
+    var medLab = el("div", "ref-lab", "top sites, median " + TRANCO_MEDIAN.toFixed(3));
+    place(medLab, TRANCO_MEDIAN, false); s.appendChild(medLab);
+    var me = el("div", "me"); me.style.left = pct(p); s.appendChild(me);
+    var meLab = el("div", "me-lab", "this URL " + p.toFixed(3));
+    place(meLab, p, true); if (p <= 0.15) meLab.style.transform = "none";
+    s.appendChild(meLab);
+    return s;
+  }
+
+  function renderResult(url, body) {
+    out.replaceChildren();
+    var p = Number(body.p_phish), thr = Number(body.threshold);
+    var readout = el("div", "readout");
+    var left = el("div");
+    left.appendChild(el("span", "p-label", "p(phish)"));
+    left.appendChild(el("span", "p-value", p.toFixed(3)));
+    readout.appendChild(left);
+    var flagged = Boolean(body.is_phish);
+    var v = el("div", "verdict" + (flagged ? " flagged" : ""),
+      flagged ? "Flagged as phishing" : "Not flagged");
+    var rate = FLAG_RATE[String(thr)];
+    v.appendChild(el("span", "verdict-sub", "at threshold " + thr.toFixed(2) +
+      (rate ? ". At this threshold, " + rate + " of the Tranco top 5,000 legitimate sites are flagged." : ".")));
+    readout.appendChild(v);
+    out.appendChild(readout);
+    out.appendChild(renderScale(p, thr));
+    var facts = el("ul", "facts");
+    var lat = body.latency_ms_total;
+    [["server time", (typeof lat === "number" ? lat.toFixed(1) : "?") + " ms"],
+     ["modality", "URL only"],
+     ["model", "LightGBM v0.2, ONNX Runtime"]].forEach(function (f) {
+      var li = el("li"); li.appendChild(el("b", null, f[0] + " ")); li.appendChild(document.createTextNode(f[1]));
+      facts.appendChild(li);
+    });
+    out.appendChild(facts);
+    out.appendChild(el("p", "scored-url", url));
+  }
+
+  function renderError(msg) {
+    out.replaceChildren(el("p", "err", msg));
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var url = input.value.trim();
+    if (url.length < 4) { renderError("Enter a URL of at least 4 characters."); input.focus(); return; }
+    go.disabled = true; go.textContent = "Scoring";
+    fetch("predict", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: url })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; });
+    }).then(function (res) {
+      if (res.ok) { renderResult(url, res.body); return; }
+      if (res.status === 422) { renderError("That input was rejected: URLs must be 4 to 4,096 characters."); return; }
+      renderError("The service returned an error (HTTP " + res.status + "). Try again in a moment.");
+    }).catch(function () {
+      renderError("Could not reach the service. If it was asleep it takes about a minute to wake; try again.");
+    }).finally(function () {
+      go.disabled = false; go.textContent = "Score URL";
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".ex"), function (b) {
+    b.addEventListener("click", function () { input.value = b.getAttribute("data-url"); form.requestSubmit(); });
+  });
+
+  // Shareable links: /?url=<encoded URL> opens with that URL already scored.
+  var shared = new URLSearchParams(location.search).get("url");
+  if (shared) { input.value = shared; form.requestSubmit(); }
+})();
+</script>
+</body>
+</html>
