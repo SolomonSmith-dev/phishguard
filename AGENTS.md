@@ -14,8 +14,8 @@ Multi-modal phishing detector: a gradient-boosted URL model, a DistilBERT HTML m
 
 ## Setup and checks
 
-- Install: `pip install -e ".[dev]"` (.github/workflows/ci.yml, line 20; `make setup` in Makefile does this in a venv)
-- Test: `pytest` (ci.yml, line 24; `make test`, Makefile line 74)
+- Install: `pip install -e ".[dev]"` (.github/workflows/ci.yml, line 23; `make setup` in Makefile does this in a venv)
+- Test: `pytest` (ci.yml, line 27; `make test`, Makefile line 74)
 - Lint and types: `ruff check src tests` and `mypy src` (Makefile, lines 78 and 79; `make lint`)
 - Format: `make format` (Makefile)
 - Pre-commit hooks are configured in `.pre-commit-config.yaml`. Do not skip them.
